@@ -1,0 +1,85 @@
+account,period,value
+Revenue,2025-06,1150000
+Revenue,2025-07,1050000
+Revenue,2025-08,1020000
+Revenue,2025-09,1160000
+Revenue,2025-10,1220000
+Revenue,2025-11,1320000
+Revenue,2025-12,1400000
+Revenue,2026-01,1100000
+Revenue,2026-02,1130000
+Revenue,2026-03,1210000
+Revenue,2026-04,1255000
+Revenue,2026-05,1320000
+COGS,2025-06,475000
+COGS,2025-07,435000
+COGS,2025-08,414000
+COGS,2025-09,472000
+COGS,2025-10,497000
+COGS,2025-11,538000
+COGS,2025-12,571000
+COGS,2026-01,451000
+COGS,2026-02,463000
+COGS,2026-03,497000
+COGS,2026-04,517000
+COGS,2026-05,551000
+Personnel Cost,2025-06,288000
+Personnel Cost,2025-07,292000
+Personnel Cost,2025-08,296000
+Personnel Cost,2025-09,300000
+Personnel Cost,2025-10,306000
+Personnel Cost,2025-11,310000
+Personnel Cost,2025-12,313000
+Personnel Cost,2026-01,315000
+Personnel Cost,2026-02,317000
+Personnel Cost,2026-03,318000
+Personnel Cost,2026-04,320000
+Personnel Cost,2026-05,321000
+Marketing Spend,2025-06,74000
+Marketing Spend,2025-07,73000
+Marketing Spend,2025-08,60000
+Marketing Spend,2025-09,62000
+Marketing Spend,2025-10,71000
+Marketing Spend,2025-11,73000
+Marketing Spend,2025-12,75000
+Marketing Spend,2026-01,88000
+Marketing Spend,2026-02,90000
+Marketing Spend,2026-03,92000
+Marketing Spend,2026-04,94000
+Marketing Spend,2026-05,96000
+IT Infrastructure,2025-06,45000
+IT Infrastructure,2025-07,45000
+IT Infrastructure,2025-08,45000
+IT Infrastructure,2025-09,45000
+IT Infrastructure,2025-10,45000
+IT Infrastructure,2025-11,45000
+IT Infrastructure,2025-12,45000
+IT Infrastructure,2026-01,45000
+IT Infrastructure,2026-02,45000
+IT Infrastructure,2026-03,45000
+IT Infrastructure,2026-04,45000
+IT Infrastructure,2026-05,45000
+R&D Expense,2025-06,168000
+R&D Expense,2025-07,174000
+R&D Expense,2025-08,180000
+R&D Expense,2025-09,186000
+R&D Expense,2025-10,193000
+R&D Expense,2025-11,200000
+R&D Expense,2025-12,208000
+R&D Expense,2026-01,216000
+R&D Expense,2026-02,222000
+R&D Expense,2026-03,228000
+R&D Expense,2026-04,235000
+R&D Expense,2026-05,242000
+Travel & Ent,2025-06,14000
+Travel & Ent,2025-07,9000
+Travel & Ent,2025-08,11000
+Travel & Ent,2025-09,22000
+Travel & Ent,2025-10,8000
+Travel & Ent,2025-11,13000
+Travel & Ent,2025-12,19000
+Travel & Ent,2026-01,10000
+Travel & Ent,2026-02,12000
+Travel & Ent,2026-03,15000
+Travel & Ent,2026-04,11000
+Travel & Ent,2026-05,16000
