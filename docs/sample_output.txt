@@ -1,0 +1,43 @@
+CLOSE ANOMALY TRIAGE - GENERATED OUTPUT
+================================================================
+Generated:  2026-07-12T08:25:11.232772+00:00
+Entity:     Valencia Operations
+Period:     2026-06
+Flagged:    3 accounts
+Model:      claude-sonnet-4-6
+Tokens:     1,191 in / 930 out
+================================================================
+
+# Valencia Operations - June 2026 Close Review
+
+Three accounts need attention: two are likely timing and one is likely permanent.
+
+---
+
+**Travel & Ent [HIGH]**
+Likely: timing. A single event, conference, or offsite almost certainly drove a one-month spike with a z-score of 4.99.
+Story: All three benchmarks agree this is an overspend. Actual is 107% over forecast, meaning even the latest expectation did not anticipate this. That rules out a known planned event absorbed into the forecast.
+Hypothesis: An unplanned offsite or conference hit in June without forecast capture.
+Confidence: medium. The pattern screams timing, but the fact that forecast also missed it warrants confirmation that this is not a new recurring travel pattern or a policy breach.
+
+---
+
+**Marketing Spend [HIGH]**
+Likely: timing, but treat as uncertain. The spike is large in euro terms (EUR 44k to 47k over every benchmark) and the forecast also missed it entirely, which is the most concerning signal.
+Story: Budget and forecast both miss by roughly the same amount, meaning this was not a known campaign pulled forward. This is either a surprise spend or a booking error.
+Hypothesis: An unplanned campaign or annual agency invoice booked in June without forecast update.
+Confidence: medium. Could be timing if a large vendor invoice landed early, but the magnitude and the forecast miss make this worth treating as potentially permanent until explained.
+
+---
+
+**IT Infrastructure [MEDIUM]**
+Likely: permanent. The identical EUR 6k variance against all three benchmarks (prior, budget, and forecast) is the tell. Prior month is also over, which means this is not a one-off blip but a step change that the forecast has not yet absorbed.
+Story: Forecast is the most important benchmark here. Forecast should reflect the latest reality, yet it still shows the same gap as budget. That means nobody has updated the run rate, which suggests the step change is real and ongoing.
+Hypothesis: A new software licence or infrastructure contract added since the budget was set.
+Confidence: high. Uniform variance across all three benchmarks on a stable account is a strong signal of a genuine run-rate increase.
+
+---
+
+**RECOMMENDED ACTIONS:** Investigate Travel and Ent first to confirm whether expenses are policy-compliant and whether any recharges or recoveries apply, then investigate Marketing Spend to determine whether the EUR 143k reflects a genuine accrual or a duplicate or misposted invoice.
+
+---
