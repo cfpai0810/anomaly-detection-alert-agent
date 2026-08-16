@@ -12,7 +12,8 @@
 # Does NOT know about: file loading, Claude, output files
 #
 # Core rule: this layer is fully deterministic. Same inputs always produce
-# the same flags. Nothing here calls the language model.
+# the same flags. Nothing here calls the language model. Detection is a
+# pure function of (data, thresholds) with no hidden state.
 # =============================================================================
 
 import statistics
@@ -23,12 +24,13 @@ from config import (
 )
 
 
-def thresholds_for(account):
+def thresholds_for(account, account_thresholds=ACCOUNT_THRESHOLDS,
+                   global_threshold=GLOBAL_THRESHOLD):
     """Return the threshold config for an account, or the global default."""
-    return ACCOUNT_THRESHOLDS.get(account, GLOBAL_THRESHOLD)
+    return account_thresholds.get(account, global_threshold)
 
 
-def safe_variance(actual, benchmark):
+def safe_variance(actual, benchmark, near_zero=NEAR_ZERO):
     """
     Compute the dollar change always. Compute the percentage only if the
     benchmark is above the near-zero floor, so we never divide by a tiny
@@ -36,12 +38,13 @@ def safe_variance(actual, benchmark):
     where pct is None for a near-zero base.
     """
     dollar = actual - benchmark
-    if abs(benchmark) < NEAR_ZERO:
+    if abs(benchmark) < near_zero:
         return dollar, None, "near_zero_base"
     return dollar, dollar / benchmark, "ok"
 
 
-def is_material(account, dollar, pct):
+def is_material(account, dollar, pct, account_thresholds=ACCOUNT_THRESHOLDS,
+                global_threshold=GLOBAL_THRESHOLD):
     """
     Three-part materiality rule:
       (|pct| >= pct_band AND |dollar| >= min_dollar_floor)
@@ -49,7 +52,7 @@ def is_material(account, dollar, pct):
     If pct is None (near-zero base), only the big-dollar test applies.
     Returns (is_material, reason).
     """
-    t = thresholds_for(account)
+    t = thresholds_for(account, account_thresholds, global_threshold)
     big = abs(dollar) >= t["big_dollar"]
 
     if pct is None:
@@ -65,11 +68,12 @@ def is_material(account, dollar, pct):
     return (False, None)
 
 
-def volatility_context(value, history_values):
+def volatility_context(value, history_values, z_cutoff=MODIFIED_Z_CUTOFF):
     """
-    Modified z-score (median and MAD) as a CONTEXT signal, not a hard flag.
-    Robust to small samples and outliers because it uses the median, which
-    is not dragged around by the very anomalies we are trying to detect.
+    Modified z-score (median and MAD). Flags accounts whose current value
+    is statistically unusual for their own history. Robust to small samples
+    and outliers because it uses the median, which is not dragged around by
+    the very anomalies we are trying to detect.
 
     Returns (label, modified_z):
       unusual_for_account    z beyond the cutoff, large for this account
@@ -86,17 +90,24 @@ def volatility_context(value, history_values):
         return ("stable_no_move", 0.0)
 
     mz = 0.6745 * (value - med) / mad
-    if abs(mz) > MODIFIED_Z_CUTOFF:
+    if abs(mz) > z_cutoff:
         return ("unusual_for_account", mz)
     return ("within_normal_range", mz)
 
 
-def detect_anomalies(close_df, history):
+def detect_anomalies(close_df, history,
+                     account_thresholds=ACCOUNT_THRESHOLDS,
+                     global_threshold=GLOBAL_THRESHOLD,
+                     z_cutoff=MODIFIED_Z_CUTOFF,
+                     near_zero=NEAR_ZERO):
     """
     For each account, compute variance against all three benchmarks, apply
     the materiality rule, and add the volatility context. An account is
     flagged if it is material against any benchmark OR its history is flat
     and it moved. Returns (flagged list, detection flags list).
+
+    All thresholds are taken as parameters so the web layer can re-run
+    detection with adjusted values without mutating global config.
     """
     flagged = []
     flags   = []
@@ -114,8 +125,9 @@ def detect_anomalies(close_df, history):
         comparisons         = {}
         material_benchmarks = []
         for bench in BENCHMARKS:
-            dollar, pct, base = safe_variance(actual, row[bench])
-            material, reason  = is_material(account, dollar, pct)
+            dollar, pct, base = safe_variance(actual, row[bench], near_zero)
+            material, reason  = is_material(account, dollar, pct,
+                                            account_thresholds, global_threshold)
             comparisons[bench] = {
                 "benchmark_value": row[bench],
                 "dollar": dollar, "pct": pct, "base": base,
@@ -124,10 +136,11 @@ def detect_anomalies(close_df, history):
             if material:
                 material_benchmarks.append(bench)
 
-        vol_label, mz = volatility_context(actual, history_values)
+        vol_label, mz = volatility_context(actual, history_values, z_cutoff)
         stable_moved  = (vol_label == "stable_account_moved")
 
-        is_flagged = bool(material_benchmarks) or stable_moved
+        is_flagged = (bool(material_benchmarks) or stable_moved
+                      or vol_label == "unusual_for_account")
         if is_flagged:
             flagged.append({
                 "account": account,
@@ -138,17 +151,5 @@ def detect_anomalies(close_df, history):
                 "modified_z": mz,
                 "stable_moved": stable_moved,
             })
-
-    print("\n[OK] Detection complete")
-    print("     Accounts scanned: {}".format(len(close_df)))
-    print("     Flagged:          {}".format(len(flagged)))
-    print("     Flags raised:     {}".format(len(flags)))
-    for f in flagged:
-        reasons = []
-        if f["material_benchmarks"]:
-            reasons.append("material vs " + "+".join(f["material_benchmarks"]))
-        if f["stable_moved"]:
-            reasons.append("stable account moved")
-        print("     --> {}: {}".format(f["account"], "; ".join(reasons)))
 
     return flagged, flags

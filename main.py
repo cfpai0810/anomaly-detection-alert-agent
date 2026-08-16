@@ -33,11 +33,28 @@ if __name__ == "__main__":
 
     flagged, flags = detect_anomalies(close_df, history)
 
+    print("\n[OK] Detection complete")
+    print("     Accounts scanned: {}".format(len(close_df)))
+    print("     Flagged:          {}".format(len(flagged)))
+    print("     Flags raised:     {}".format(len(flags)))
+    for f in flagged:
+        reasons = []
+        if f["material_benchmarks"]:
+            reasons.append("material vs " + "+".join(f["material_benchmarks"]))
+        if f["stable_moved"]:
+            reasons.append("stable account moved")
+        print("     --> {}: {}".format(f["account"], "; ".join(reasons)))
+
     if not flagged:
         print("\n[DONE] No anomalies flagged. Clean close.")
     else:
         system_prompt, user_prompt = build_prompt(flagged, DEFAULT_ENTITY, CLOSE_PERIOD)
-        raw_response, tok_in, tok_out, stop_reason = call_claude(system_prompt, user_prompt)
+
+        try:
+            raw_response, tok_in, tok_out, stop_reason = call_claude(system_prompt, user_prompt)
+        except RuntimeError as exc:
+            print("\n[ERROR] {}".format(exc))
+            raise SystemExit(1)
 
         # Split the response: narrative for humans, JSON for the CSV artefact
         triage_narrative = strip_json_block(raw_response)

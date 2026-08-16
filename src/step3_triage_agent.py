@@ -21,10 +21,18 @@ import anthropic
 
 from config import (
     ANTHROPIC_API_KEY, MODEL, MAX_TOKENS,
-    BENCHMARKS, BENCHMARK_MEANING,
+    BENCHMARKS, BENCHMARK_MEANING, CURRENCY_CODE,
 )
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+def _default_client():
+    """Build the default client lazily so the module can be imported without
+    a key (the web path supplies its own per-session client)."""
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY not found. Set it in .env for CLI use, "
+            "or paste a key in the web sidebar.")
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 def build_prompt(flagged, entity, close_period):
@@ -44,7 +52,7 @@ def build_prompt(flagged, entity, close_period):
         "- budget: the plan (a performance check)\n"
         "- forecast: the latest expectation (a drift check)\n"
         "An account was flagged if a variance was material (large in "
-        "percentage and euro terms) or if a normally stable account moved.\n"
+        "percentage and {currency_code} terms) or if a normally stable account moved.\n"
         "</what_the_detection_did>\n\n"
         "<your_job>\n"
         "For each flagged account:\n"
@@ -91,7 +99,7 @@ def build_prompt(flagged, entity, close_period):
         '  "triage": [\n'
         '    {{"account": "NAME", "priority": "HIGH|MEDIUM|LOW", '
         '"assessment": "timing|permanent", '
-        '"headline": "the single most important number, e.g. 46% over budget (EUR 45k)", '
+        '"headline": "the single most important number, e.g. 46% over budget ({currency_code} 45k)", '
         '"story": "which benchmark tells the real story and what it means, one clause", '
         '"hypothesis": "likely cause, under 15 words", '
         '"confidence": "high|medium|low"}}\n'
@@ -99,11 +107,11 @@ def build_prompt(flagged, entity, close_period):
         "}}\n"
         "```\n"
         "</output_format>"
-    ).format(entity=entity)
+    ).format(entity=entity, currency_code=CURRENCY_CODE)
 
     lines = []
     for f in flagged:
-        lines.append("ACCOUNT: {} (actual EUR {:,.0f})".format(f["account"], f["actual"]))
+        lines.append("ACCOUNT: {} (actual {} {:,.0f})".format(f["account"], CURRENCY_CODE, f["actual"]))
         for bench in BENCHMARKS:
             c = f["comparisons"][bench]
             if c["pct"] is not None:
@@ -165,8 +173,11 @@ def strip_json_block(response_text):
     return re.sub(r'```json\s*.*?\s*```', '', response_text, flags=re.DOTALL).strip()
 
 
-def call_claude(system_prompt, user_prompt):
-    """Send prompts to Claude and return the response plus token counts."""
+def call_claude(system_prompt, user_prompt, client=None):
+    """Send prompts to Claude and return the response plus token counts.
+    If no client is passed, the default client (from ANTHROPIC_API_KEY) is used."""
+    if client is None:
+        client = _default_client()
     print("\n[..] Calling Claude API ({})...".format(MODEL))
     try:
         response = client.messages.create(

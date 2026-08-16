@@ -14,6 +14,7 @@ import json
 import hashlib
 import re
 from pathlib import Path
+import io
 from datetime import datetime, timezone
 
 from reportlab.lib.pagesizes import A4
@@ -29,6 +30,7 @@ from reportlab.platypus      import (
 from config import (
     OUTPUT_DIR, AUDIT_LOG, CLOSE_FILE, HISTORY_FILE,
     DEFAULT_ENTITY, CLOSE_PERIOD, MODEL, BENCHMARKS,
+    CURRENCY_SYMBOL, CURRENCY_CODE,
 )
 
 # ── Page geometry and palette (same system as Projects 1 and 2) ───────────────
@@ -97,6 +99,12 @@ def _build_triage_lookup(triage_json):
     return lookup
 
 
+def file_sha256(path):
+    """SHA-256 hash of a file, returned as 'sha256:<hex>'."""
+    with open(path, "rb") as fh:
+        return "sha256:" + hashlib.sha256(fh.read()).hexdigest()
+
+
 def clean_markdown(text):
     """Strip markdown artefacts before PDF rendering. Escape & first."""
     text = text.replace("&", "&amp;")
@@ -134,10 +142,8 @@ def write_output(triage, flagged, flags, tok_in, tok_out, stop_reason):
     )
     out_path.write_text(header + triage, encoding="utf-8")
 
-    with open(CLOSE_FILE, "rb") as fh:
-        close_hash = "sha256:" + hashlib.sha256(fh.read()).hexdigest()
-    with open(HISTORY_FILE, "rb") as fh:
-        history_hash = "sha256:" + hashlib.sha256(fh.read()).hexdigest()
+    close_hash = file_sha256(CLOSE_FILE)
+    history_hash = file_sha256(HISTORY_FILE)
 
     requires_review = (
         len(flagged) > 0
@@ -244,8 +250,8 @@ def _anomaly_card(flag, triage_lookup):
 
     hdr = Table([[
         Paragraph(
-            '<b>{}</b>  <font size="8" color="#898781">actual EUR {:,.0f}</font>'.format(
-                account, actual),
+            '<b>{}</b>  <font size="8" color="#898781">actual {}{:,.0f}</font>'.format(
+                account, CURRENCY_SYMBOL, actual),
             ParagraphStyle("h", fontName="Helvetica", fontSize=11,
                 textColor=DARK_BLUE, leading=14)),
         Paragraph('<b>{}</b>'.format(priority),
@@ -324,7 +330,49 @@ def update_audit_pdf(pdf_path):
     AUDIT_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _methodology_box():
+def _threshold_summary_box(account_thresholds, global_threshold, z_cutoff,
+                           near_zero):
+    """Build a small table showing the effective thresholds for this scan."""
+    rows = [[
+        Paragraph("<b>Scope</b>", S_TBL_HDR),
+        Paragraph("<b>% band</b>", S_TBL_HDR),
+        Paragraph("<b>Floor ({})</b>".format(CURRENCY_CODE), S_TBL_HDR),
+        Paragraph("<b>Big move ({})</b>".format(CURRENCY_CODE), S_TBL_HDR),
+    ]]
+    rows.append([
+        Paragraph("Global default", S_TBL),
+        Paragraph("{:.1%}".format(global_threshold["pct_band"]), S_TBL_NUM),
+        Paragraph("{:,.0f}".format(global_threshold["min_dollar_floor"]), S_TBL_NUM),
+        Paragraph("{:,.0f}".format(global_threshold["big_dollar"]), S_TBL_NUM),
+    ])
+    for account in sorted(account_thresholds):
+        at = account_thresholds[account]
+        rows.append([
+            Paragraph(account, S_TBL),
+            Paragraph("{:.1%}".format(at["pct_band"]), S_TBL_NUM),
+            Paragraph("{:,.0f}".format(at["min_dollar_floor"]), S_TBL_NUM),
+            Paragraph("{:,.0f}".format(at["big_dollar"]), S_TBL_NUM),
+        ])
+    col_widths = [4 * cm, 2.5 * cm, 3 * cm, PAGE_W - 9.5 * cm]
+    tbl = Table(rows, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), TBL_HEADER),
+        ("LINEBELOW",     (0, 0), (-1, 0), 0.75, MID_BLUE),
+        ("LINEBELOW",     (0, 1), (-1, -1), 0.25, RULE_COLOR),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+    ]))
+    z_note = Paragraph(
+        '<font color="#898781">Modified z-score cutoff: {:.1f}. '
+        'Near-zero floor: {}{:,.0f}.</font>'.format(z_cutoff, CURRENCY_SYMBOL, near_zero),
+        S_CARD)
+    heading = Paragraph("<b>Effective thresholds for this scan</b>", S_HEAD)
+    return [heading, Spacer(1, 0.15 * cm), tbl, Spacer(1, 0.1 * cm), z_note]
+
+
+def _methodology_box(effective_thresholds=None):
     """Explain the detection criteria: what makes an account an anomaly."""
     intro = Paragraph(
         "An account is flagged for review when <b>either</b> test below is met. "
@@ -338,9 +386,10 @@ def _methodology_box():
         [Paragraph("<b>Materiality</b>", S_TBL),
          Paragraph("Large variances vs prior month, budget, or forecast", S_TBL),
          Paragraph("Flagged if the percentage clears the account band <b>and</b> the "
-                   "euro change clears the floor, <b>or</b> the euro change is very "
+                   "{} change clears the floor, <b>or</b> the {} change is very "
                    "large on its own. Thresholds are per account: tighter for Revenue "
-                   "and Personnel, looser for discretionary costs.", S_TBL)],
+                   "and Personnel, looser for discretionary costs.".format(
+                       CURRENCY_CODE, CURRENCY_CODE), S_TBL)],
         [Paragraph("<b>Unusual for<br/>the account</b>", S_TBL),
          Paragraph("A value out of character with the account's own history", S_TBL),
          Paragraph("A modified z-score (median and MAD, robust on small samples) versus "
@@ -366,7 +415,14 @@ def _methodology_box():
         "(priority, timing versus permanent, a likely cause) but never removes a flag.</font>",
         S_CARD)
 
-    return [intro, Spacer(1, 0.2*cm), t, Spacer(1, 0.15*cm), note]
+    elements = [intro, Spacer(1, 0.2*cm), t, Spacer(1, 0.15*cm), note]
+
+    if effective_thresholds is not None:
+        et_at, et_gt, et_zc, et_nz = effective_thresholds
+        elements.append(Spacer(1, 0.3 * cm))
+        elements.extend(_threshold_summary_box(et_at, et_gt, et_zc, et_nz))
+
+    return elements
 
 
 def _narrative_highlights(triage_narrative):
@@ -477,23 +533,14 @@ def _triage_narrative_section(triage_json, summary):
     return elements
 
 
-def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
-    """
-    Build the controller review pack:
-      1. Cover (entity, period, count, metadata)
-      2. Anomaly cards, one per flagged account, sorted by priority
-      3. The triage narrative
-      4. Footer
-    """
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    now      = datetime.now(timezone.utc)
-    ts_file  = now.strftime("%Y-%m-%d_%H-%M-%S")
-    ts_log   = now.isoformat()
-    pdf_path = OUTPUT_DIR / "close_review_{}.pdf".format(ts_file)
+def _build_pdf_story(triage_narrative, flagged, triage_json, tok_in, tok_out,
+                     effective_thresholds=None):
+    """Assemble the list of ReportLab flowables for the review PDF."""
+    now    = datetime.now(timezone.utc)
+    ts_log = now.isoformat()
 
     triage_lookup = _build_triage_lookup(triage_json)
 
-    # Sort cards by priority HIGH, MEDIUM, LOW, then anything else
     prio_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     def card_key(f):
         p = triage_lookup.get(_normalise_account(f["account"]), {}).get("priority", "").upper()
@@ -505,7 +552,6 @@ def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
                               ts_log, tok_in, tok_out))
     story.append(Spacer(1, 0.4 * cm))
 
-    # AI triage assessment — the judgement, concisely highlighted
     summary, _ = _narrative_highlights(triage_narrative)
     story.append(_section_header("AI TRIAGE ASSESSMENT"))
     story.append(Spacer(1, 0.25 * cm))
@@ -516,16 +562,14 @@ def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
         story.append(Paragraph("<b>Summary.</b> " + summary, S_BODY))
     story.append(Spacer(1, 0.25 * cm))
 
-    # The supporting numbers, one card per flagged account
     story.append(_section_header("VARIANCE DETAIL BY ACCOUNT"))
     story.append(Spacer(1, 0.25 * cm))
     for f in ordered:
         story.append(_anomaly_card(f, triage_lookup))
 
-    # How the judgement is made
     story.append(_section_header("HOW ACCOUNTS ARE FLAGGED"))
     story.append(Spacer(1, 0.2 * cm))
-    for element in _methodology_box():
+    for element in _methodology_box(effective_thresholds):
         story.append(element)
     story.append(Spacer(1, 0.4 * cm))
 
@@ -537,12 +581,31 @@ def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
             MODEL, ts_log[:10]),
         S_META))
 
-    doc = SimpleDocTemplate(
-        str(pdf_path), pagesize=A4,
+    return story
+
+
+def _build_pdf_doc(target):
+    """Create a SimpleDocTemplate writing to *target* (path string or buffer)."""
+    return SimpleDocTemplate(
+        target, pagesize=A4,
         rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm,
         title="Close Anomaly Review - {}".format(CLOSE_PERIOD),
         author="AI Anomaly Detection and Alert Agent",
     )
+
+
+def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
+    """
+    Build the controller review pack and write it to OUTPUT_DIR.
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    now      = datetime.now(timezone.utc)
+    ts_file  = now.strftime("%Y-%m-%d_%H-%M-%S")
+    pdf_path = OUTPUT_DIR / "close_review_{}.pdf".format(ts_file)
+
+    story = _build_pdf_story(triage_narrative, flagged, triage_json,
+                             tok_in, tok_out)
+    doc = _build_pdf_doc(str(pdf_path))
     doc.build(story)
     update_audit_pdf(pdf_path)
 
@@ -550,6 +613,17 @@ def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
     print("     PDF:  {}".format(pdf_path.name))
     print("     Size: {:.1f} KB".format(pdf_path.stat().st_size / 1024))
     return pdf_path
+
+
+def build_pdf_bytes(triage_narrative, flagged, triage_json, tok_in, tok_out,
+                    effective_thresholds=None):
+    """Build the review PDF in memory and return the bytes."""
+    story = _build_pdf_story(triage_narrative, flagged, triage_json,
+                             tok_in, tok_out, effective_thresholds)
+    buf = io.BytesIO()
+    doc = _build_pdf_doc(buf)
+    doc.build(story)
+    return buf.getvalue()
 
 
 def update_audit_csv(csv_path):
@@ -565,34 +639,17 @@ def update_audit_csv(csv_path):
     AUDIT_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def export_anomalies_csv(flagged, triage_json):
-    """
-    Export the anomaly list with a disposition column: the governance
-    artefact the controller works from. Each row merges the deterministic
-    detection data (variances, volatility) with the agent's triage
-    (priority, assessment, hypothesis) and leaves disposition and
-    reviewed_by blank for the controller to complete.
-
-    Uses pandas to_csv so any commas inside the agent's text are quoted
-    correctly rather than breaking the columns.
-    """
-    import pandas as pd
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    now      = datetime.now(timezone.utc)
-    ts_file  = now.strftime("%Y-%m-%d_%H-%M-%S")
-    csv_path = OUTPUT_DIR / "anomalies_{}.csv".format(ts_file)
-
+def _build_csv_rows(flagged, triage_json):
+    """Build the anomaly CSV rows as a list of dicts."""
     triage_lookup = _build_triage_lookup(triage_json)
-
     rows = []
     for f in flagged:
         account = f["account"]
         t       = triage_lookup.get(_normalise_account(account), {})
         c       = f["comparisons"]
 
-        def pct_str(bench):
-            p = c[bench]["pct"]
+        def pct_str(bench, comps=c):
+            p = comps[bench]["pct"]
             return "" if p is None else "{:.1%}".format(p)
 
         rows.append({
@@ -615,7 +672,22 @@ def export_anomalies_csv(flagged, triage_json):
             "disposition":         "",
             "reviewed_by":         "",
         })
+    return rows
 
+
+def export_anomalies_csv(flagged, triage_json):
+    """
+    Export the anomaly list with a disposition column: the governance
+    artefact the controller works from.
+    """
+    import pandas as pd
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    now      = datetime.now(timezone.utc)
+    ts_file  = now.strftime("%Y-%m-%d_%H-%M-%S")
+    csv_path = OUTPUT_DIR / "anomalies_{}.csv".format(ts_file)
+
+    rows = _build_csv_rows(flagged, triage_json)
     df = pd.DataFrame(rows)
     df.to_csv(csv_path, index=False)
     update_audit_csv(csv_path)
@@ -624,3 +696,11 @@ def export_anomalies_csv(flagged, triage_json):
     print("     CSV:  {}".format(csv_path.name))
     print("     Rows: {} (disposition column blank for controller)".format(len(df)))
     return csv_path
+
+
+def build_csv_bytes(flagged, triage_json):
+    """Build the anomalies CSV in memory and return UTF-8 bytes."""
+    import pandas as pd
+    rows = _build_csv_rows(flagged, triage_json)
+    df = pd.DataFrame(rows)
+    return df.to_csv(index=False).encode("utf-8")
