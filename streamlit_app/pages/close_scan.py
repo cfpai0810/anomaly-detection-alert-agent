@@ -360,7 +360,15 @@ styled = (result_df[show_cols + ["_flagged"]]
 # Hide the internal _flagged column from display.
 styled = styled.hide(subset=["_flagged"], axis="columns")
 
-st.dataframe(styled, use_container_width=True, hide_index=True)
+st.dataframe(
+    styled,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Volatility": st.column_config.TextColumn(width="medium"),
+        "Reason":     st.column_config.TextColumn(width="large"),
+    },
+)
 
 # Honest caption for stable-moved accounts.
 has_stable = any(r["_stable_moved"] for r in result_rows)
