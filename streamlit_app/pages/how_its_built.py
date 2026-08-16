@@ -1,6 +1,13 @@
 # =============================================================================
 # pages/how_its_built.py -- the technical and governance story
 # =============================================================================
+# Two audiences on one page. Part 1 is for a finance leader: why an AI-assisted
+# anomaly scanner can be trusted (the separated layers, the flag-for-review
+# model, the deterministic detection, the audit trail). Part 2 is for a
+# technical evaluator: the pipeline, the detection rules, the every-account
+# guarantee, and the safety properties. Matches the section order of Projects 1
+# and 4 so the three read as a family.
+# =============================================================================
 
 import sys
 from pathlib import Path
@@ -13,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.governance_flow import governance_flow_svg
 from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
 
 st.markdown(inject_css(), unsafe_allow_html=True)
@@ -21,41 +29,81 @@ st.markdown(inject_css(), unsafe_allow_html=True)
 # -- Title --------------------------------------------------------------------
 st.markdown("### How it's built")
 st.write(
-    "The technical design and the governance properties that make the tool "
-    "trustworthy. This page is for anyone who wants to understand what "
-    "runs where, what the AI can and cannot do, and how the audit trail "
-    "works.")
+    "This tool was built on one idea: an AI system that touches financial "
+    "numbers has to earn trust before it earns time. The sections below "
+    "explain how that idea shapes the design, first for a finance reader "
+    "and then in technical detail.")
 
+# ── Part 1: the trust story (finance reader) ─────────────────────────────────
 st.markdown("---")
+st.markdown("#### Why you can trust the numbers")
 
+st.write(
+    "The tool never lets the language model decide what is suspicious. "
+    "That is the whole idea. A language model is good at reading a set of "
+    "flagged variances and explaining them in clear prose. It is not a "
+    "detection engine, and it is not asked to be one. Every flag you see "
+    "is raised by deterministic Python, the same way a spreadsheet rule "
+    "would raise it, and the same inputs and thresholds always produce the "
+    "same flags.")
 
-# -- The boundary -------------------------------------------------------------
-st.markdown("#### The boundary: Python detects, the model triages")
+st.markdown("**The work happens in separated layers.**")
+components.html(governance_flow_svg(), height=300, scrolling=False)
 st.write(
-    "This is the heart of the design. Python does all the detection: "
-    "the variance computation, the materiality rule, the modified z-score, "
-    "the stable-moved check, and the flagging decision. The detection "
-    "engine is a pure function with no randomness and no model dependency. "
-    "The same inputs and the same thresholds always produce the same "
-    "flagged accounts.")
+    "You load the month-end close; Python runs the materiality and "
+    "volatility tests against the thresholds you set and flags the "
+    "outliers; the model reads the flagged accounts and triages each one "
+    "with a priority, an assessment, and a hypothesis; and you review "
+    "every flagged account. The model never sees the unflagged accounts, "
+    "never decides what is suspicious, and cannot remove a flag or "
+    "suppress an account from the review.")
+
+st.markdown("**Anything the data cannot support is flagged, not explained away.**")
 st.write(
-    "The model (Claude) only triages accounts that Python has already "
-    "flagged. It receives the variance data Python computed and returns a "
-    "priority, an assessment (timing or permanent), a hypothesis, and a "
-    "confidence level. It never sees the unflagged accounts, never decides "
-    "what is suspicious, and cannot remove a flag or suppress an account "
-    "from the review.")
+    "When a benchmark value is near zero, no percentage is computed. When "
+    "an account has a flat history, the z-score test is skipped and the "
+    "stable-moved check takes over. The tool does not ask the model to "
+    "narrate around a number that is missing or suspect; it records the "
+    "condition and leaves the judgement to you.")
+
+st.markdown("**Every run leaves a record.**")
+st.write(
+    "Each run is written to an audit record with SHA-256 hashes of the "
+    "input data, the effective thresholds actually used, the token usage, "
+    "and a requires-review flag. The hashes are the lineage: they prove "
+    "which data produced this triage, so a run can always be traced and "
+    "reproduced. This is what a finance function needs before it will "
+    "rely on a tool, assisted by AI or not.")
 
 st.info(
-    "The AI adds interpretation on top of a deterministic base. It does "
-    "not control what is flagged, and it cannot hide what the detection "
-    "surfaces.")
+    "In one line: the model reads the flagged accounts and writes the "
+    "triage; Python detects every anomaly and flags what needs a human; "
+    "you review what is flagged. The intelligence is at the edges, and "
+    "the detection in the middle is deterministic and checkable.")
 
+st.markdown("#### The governance lifecycle")
+components.html(governance_lifecycle_svg(), height=310, scrolling=False)
+st.write(
+    "In a production deployment, review is the start of the record, not "
+    "the end. Once a reviewer approves the triage, the approved version "
+    "becomes the immutable record: it is what everyone reads afterwards, "
+    "and it cannot be edited. A later change is issued as a new, "
+    "separately approved version, and the original approved triage still "
+    "stands unchanged. This live demo stops at flagging for review; it "
+    "does not store or lock anything, so no data is retained. The "
+    "lifecycle diagram above shows the full model this design is built "
+    "towards.")
+
+# ── Part 2: the technical detail (engineer / evaluator) ──────────────────────
 st.markdown("---")
+st.markdown("#### The technical detail")
 
+st.write(
+    "The system is a small, layered pipeline. Each stage has one "
+    "responsibility, and the boundary between the model and the "
+    "deterministic code is deliberate and strict.")
 
-# -- The pipeline -------------------------------------------------------------
-st.markdown("#### The pipeline")
+st.markdown("**The pipeline.**")
 
 _PIPELINE_SVG = """
 <svg viewBox="0 0 720 120" xmlns="http://www.w3.org/2000/svg"
@@ -195,19 +243,6 @@ st.write(
 st.write(
     "The tool is an aid to the review, not a replacement for it. The "
     "controller decides what needs action.")
-
-st.markdown("#### The governance lifecycle")
-components.html(governance_lifecycle_svg(), height=310, scrolling=False)
-st.write(
-    "In a production deployment, review is the start of the record, not "
-    "the end. Once a reviewer approves the triage, the approved version "
-    "becomes the immutable record: it is what everyone reads afterwards, "
-    "and it cannot be edited. A later change is issued as a new, "
-    "separately approved version, and the original approved triage still "
-    "stands unchanged. This live demo stops at flagging for review; it "
-    "does not store or lock anything, so no data is retained. The "
-    "lifecycle diagram above shows the full model this design is built "
-    "towards.")
 
 st.divider()
 st.caption("Sample data only. All figures are illustrative.")
