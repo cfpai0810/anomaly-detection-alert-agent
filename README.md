@@ -5,6 +5,8 @@ account for statistical anomalies, and an AI agent triages them for the
 controller, judging which are worth attention and why. The controller stays
 in control; the agent makes the review faster, not automatic.
 
+**Live demo:** [anomaly-detection-alert-agent.streamlit.app](https://anomaly-detection-alert-agent.streamlit.app)
+
 ---
 
 ## What it does
