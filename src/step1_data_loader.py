@@ -1,5 +1,5 @@
 # =============================================================================
-# step1_data_loader.py — Layer 2: Data Loading and Validation
+# step1_data_loader.py: Layer 2: Data Loading and Validation
 # =============================================================================
 # Responsibilities:
 #   - load_close():    load the month-end close with three benchmarks

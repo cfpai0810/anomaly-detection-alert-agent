@@ -1,5 +1,5 @@
 # =============================================================================
-# lib/triage_helpers.py — pure helpers for the AI triage section
+# lib/triage_helpers.py: pure helpers for the AI triage section
 # =============================================================================
 # No Streamlit dependency. Tested in the main test suite.
 # =============================================================================

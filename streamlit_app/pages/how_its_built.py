@@ -214,7 +214,7 @@ st.markdown("**The modified z-score.**")
 st.write(
     "The tool uses the Iglewicz-Hoaglin modified z-score, which compares "
     "the current value to the median of the trailing twelve months, "
-    "scaled by the median absolute deviation (MAD). This is robust to "
+    "scaled by the median absolute deviation (MAD). This is resistant to "
     "outliers in the history: one extreme month does not drag the "
     "baseline the way a simple mean would. The volatility slider sets "
     "the cutoff directly.")

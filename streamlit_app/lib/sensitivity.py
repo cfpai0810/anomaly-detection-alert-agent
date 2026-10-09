@@ -1,5 +1,5 @@
 # =============================================================================
-# lib/sensitivity.py — slider-to-threshold mapping for the web layer
+# lib/sensitivity.py: slider-to-threshold mapping for the web layer
 # =============================================================================
 # Two plain-language sensitivity levels (materiality and volatility) map to
 # the real threshold values the detection engine uses. The sliders scale the

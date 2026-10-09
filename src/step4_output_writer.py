@@ -1,5 +1,5 @@
 # =============================================================================
-# step4_output_writer.py — Layer 5: Output Writing and Audit Trail
+# step4_output_writer.py: Layer 5: Output Writing and Audit Trail
 # =============================================================================
 # Responsibilities:
 #   - write_output():          write the triage narrative + audit record
@@ -392,7 +392,7 @@ def _methodology_box(effective_thresholds=None):
                        CURRENCY_CODE, CURRENCY_CODE), S_TBL)],
         [Paragraph("<b>Unusual for<br/>the account</b>", S_TBL),
          Paragraph("A value out of character with the account's own history", S_TBL),
-         Paragraph("A modified z-score (median and MAD, robust on small samples) versus "
+         Paragraph("A modified z-score (median and MAD, stable on small samples) versus "
                    "the trailing 12 months. A normally stable account that moves at all "
                    "is flagged, because any change to a fixed line is worth checking.", S_TBL)],
     ]

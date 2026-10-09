@@ -1,5 +1,5 @@
 # =============================================================================
-# main.py — Anomaly Detection and Alert Agent
+# main.py: Anomaly Detection and Alert Agent
 # Pass 1: flat script, console output, understand every line
 # =============================================================================
 #

@@ -1,5 +1,5 @@
 # =============================================================================
-# step2_detection_engine.py — Layer 3: Anomaly Detection
+# step2_detection_engine.py: Layer 3: Anomaly Detection
 # =============================================================================
 # Responsibilities:
 #   - thresholds_for():      per-account threshold lookup
@@ -71,7 +71,7 @@ def is_material(account, dollar, pct, account_thresholds=ACCOUNT_THRESHOLDS,
 def volatility_context(value, history_values, z_cutoff=MODIFIED_Z_CUTOFF):
     """
     Modified z-score (median and MAD). Flags accounts whose current value
-    is statistically unusual for their own history. Robust to small samples
+    is statistically unusual for their own history. Stable on small samples
     and outliers because it uses the median, which is not dragged around by
     the very anomalies we are trying to detect.
 

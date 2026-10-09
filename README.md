@@ -44,7 +44,7 @@ computed against a tiny base, so a small account cannot produce a misleading
 large percentage.
 
 **Unusual for the account.** A value out of character with the account's own
-12-month history, measured with a modified z-score (median and MAD, robust on
+12-month history, measured with a modified z-score (median and MAD, stable on
 small samples and not distorted by the very outliers it is meant to detect). A
 normally stable account that moves at all is flagged, because any change to a
 fixed line is worth checking. This is what catches a small movement that a

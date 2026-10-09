@@ -1,5 +1,5 @@
 # =============================================================================
-# config.py — Anomaly Detection and Alert Agent
+# config.py: Anomaly Detection and Alert Agent
 # =============================================================================
 
 import os

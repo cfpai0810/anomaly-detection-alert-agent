@@ -1,5 +1,5 @@
 # =============================================================================
-# tests/test_pipeline.py — Anomaly Detection and Alert Agent
+# tests/test_pipeline.py: Anomaly Detection and Alert Agent
 # =============================================================================
 # Phase 6: VALIDATE
 #
@@ -11,7 +11,7 @@
 #   2. safe_variance            — the near-zero denominator guard
 #   3. is_material              — the three-part materiality rule
 #   4. thresholds_for           — per-account thresholds
-#   5. volatility_context       — the modified z-score, robust to outliers
+#   5. volatility_context       — the modified z-score, stable against outliers
 #   6. detect_anomalies         — integration across all accounts
 #   6b. threshold overrides     — prove parameters flow through
 #   7. JSON parsing             — structured triage extraction

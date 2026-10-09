@@ -93,7 +93,7 @@ st.markdown("**Volatility test.**")
 st.write(
     "The current value is statistically unusual compared to the account's "
     "own trailing twelve months. The tool uses a modified z-score (based "
-    "on the median rather than the mean), which is robust when one or two "
+    "on the median rather than the mean), which is stable when one or two "
     "months in the history are themselves outliers. A high z-score means "
     "the current value is far from where this account normally sits.")
 

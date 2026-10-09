@@ -1,5 +1,5 @@
 # =============================================================================
-# step3_triage_agent.py — Layer 4: AI Triage Agent
+# step3_triage_agent.py: Layer 4: AI Triage Agent
 # =============================================================================
 # Responsibilities:
 #   - build_prompt():        construct the triage prompt

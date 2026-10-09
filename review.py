@@ -1,5 +1,5 @@
 # =============================================================================
-# review.py — Controller sign-off for the close anomaly review
+# review.py: Controller sign-off for the close anomaly review
 # =============================================================================
 # Usage:
 #   python review.py
