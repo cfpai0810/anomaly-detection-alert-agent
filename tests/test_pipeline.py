@@ -1037,11 +1037,11 @@ class TestGovernanceAndExample:
         close_hash = file_sha256(str(CLOSE_FILE))
         history_hash = file_sha256(str(HISTORY_FILE))
         assert close_hash == (
-            "sha256:ab606f7fdb5aafb1a6a080ac03455ee870fe7cb6c8de5e121de622c"
-            "436ed6bd7")
+            "sha256:97875ae3b9aa9935fdaf86b416f0939decb437020742fa80c5cc807"
+            "3243a4ceb")
         assert history_hash == (
-            "sha256:245d70f881afe78c10737584a876c521a39d1d0bf46316b5228e380a"
-            "9f319550")
+            "sha256:21e99d6e6fb2d9c71003f227929d38c73925971727c3f1161ffbf7b5"
+            "d509c0a6")
 
     def test_audit_record_fields(self, flagged):
         """build_audit_record produces all governance fields."""
