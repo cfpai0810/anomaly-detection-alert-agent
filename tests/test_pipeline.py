@@ -1455,3 +1455,16 @@ class TestVolatilityOnlyAccount:
         ex = load_example()
         flagged, _ = detect_anomalies(close_df, history)
         assert triage_fingerprint(flagged) == ex["fingerprint"]
+
+
+class TestDeploymentPins:
+    """The web server stack the live app installs."""
+
+    def test_item1_starlette_pinned_for_streamlit_1_60(self):
+        """Streamlit 1.60 cannot serve images with starlette 1.8 or later (item 1)."""
+        from importlib.metadata import version
+        requirements = Path(__file__).resolve().parent.parent / "requirements.txt"
+        assert "starlette==1.7.0" in requirements.read_text(encoding="utf-8-sig").split()
+        if version("streamlit").startswith("1.60."):
+            major, minor = (int(part) for part in version("starlette").split(".")[:2])
+            assert (major, minor) < (1, 8)
