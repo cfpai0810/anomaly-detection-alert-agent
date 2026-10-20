@@ -35,6 +35,10 @@ def _home_page():
         unsafe_allow_html=True,
     )
 
+    # -- One step to the worked example, which needs no key -------------------
+    if st.button("See the worked example", key="see_worked_example"):
+        st.switch_page(CLOSE_SCAN_PAGE)
+
     # -- The key gate (sidebar): returns a per-session client or None ---------
     client = render_key_gate()
     st.session_state["live_client"] = client
@@ -142,12 +146,15 @@ st.set_page_config(
 
 PAGES_DIR = Path(__file__).resolve().parent / "pages"
 
+# The worked example lives on this page, in its "View a worked example" tab.
+CLOSE_SCAN_PAGE = st.Page(str(PAGES_DIR / "close_scan.py"),
+                          title="Close Scan", icon=":material/search:")
+
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),
     st.Page(str(PAGES_DIR / "how_it_works.py"),
             title="How It Works", icon=":material/menu_book:"),
-    st.Page(str(PAGES_DIR / "close_scan.py"),
-            title="Close Scan", icon=":material/search:"),
+    CLOSE_SCAN_PAGE,
     st.Page(str(PAGES_DIR / "your_own_data.py"),
             title="Your Own Data", icon=":material/upload_file:"),
     st.Page(str(PAGES_DIR / "how_its_built.py"),

@@ -1881,3 +1881,77 @@ class TestSidebarState:
         source = APP_HOME.read_text(encoding="utf-8")
         assert 'initial_sidebar_state="auto"' in source
         assert 'initial_sidebar_state="expanded"' not in source
+
+
+# =============================================================================
+# Step 2 UX: the key gate in an expander, the worked-example button, tabular
+# figures only on numbers (UX1, UX2, UX4)
+# =============================================================================
+
+from streamlit_app.lib.key_gate import GATE_LABEL, LIVE_ON, LIVE_OFF
+from streamlit_app.lib.theme import inject_css
+
+
+class TestKeyGateExpander:
+    """The whole gate sits in a closed sidebar expander with a constant label,
+    and one line below it says whether live mode is on (UX1)."""
+
+    def test_ux1_gate_in_closed_expander(self):
+        at = _app_test()
+        expanders = at.sidebar.expander
+        assert [e.label for e in expanders] == [GATE_LABEL]
+        assert expanders[0].proto.expanded is False
+        gate = expanders[0]
+        assert [t.key for t in gate.text_input] == ["byo_api_key"]
+        assert len(gate.caption) == 2
+        assert any("sc-keynote" in m.value for m in gate.markdown)
+        assert not any("Run it yourself" in m.value for m in at.sidebar.markdown)
+
+    def test_ux1_live_mode_line(self):
+        at = _app_test()
+        assert at.sidebar.caption[-1].value == LIVE_OFF
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        assert at.sidebar.caption[-1].value == LIVE_ON
+        assert [e.label for e in at.sidebar.expander] == [GATE_LABEL]
+        assert [s.value for s in at.sidebar.expander[0].success] == [KEY_LOOKS_COMPLETE]
+
+    def test_ux1_warning_inside_expander(self):
+        at = _app_test()
+        at.sidebar.text_input(key="byo_api_key").input("sk-ant-short").run()
+        assert len(at.sidebar.expander[0].warning) == 1
+        assert at.sidebar.caption[-1].value == LIVE_OFF
+
+
+class TestWorkedExampleButton:
+    """Home has one button straight to the worked example, no key (UX2)."""
+
+    def test_ux2_button_opens_close_scan_example(self):
+        at = _app_test()
+        assert [b.label for b in at.button] == ["See the worked example"]
+        at.button(key="see_worked_example").click().run()
+        assert not at.exception
+        assert any("<h1>Close Anomaly Scan</h1>" in m.value for m in at.markdown)
+        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        example_tab = at.tabs[1]
+        assert any(c.value.startswith("This is a captured model output")
+                   for c in example_tab.caption)
+        assert at.session_state["live_client"] is None
+
+
+class TestTabularFigures:
+    """Tabular figures only where numbers line up (UX4)."""
+
+    def test_ux4_global_rule_has_no_tnum(self):
+        css = inject_css()
+        global_rule = css[css.index("html, body"):]
+        global_rule = global_rule[:global_rule.index("}")]
+        assert "tnum" not in global_rule
+        assert '"cv05" 1' in global_rule
+
+    def test_ux4_numeric_rule_lists_table(self):
+        css = inject_css()
+        start = css.index("/* Tabular figures only where numbers line up")
+        rule = css[start:css.index("}", start)]
+        selector = rule[rule.index("*/") + 2:rule.index("{")]
+        assert "table" in [s.strip() for s in selector.split(",")]
+        assert '"tnum" 1' in rule

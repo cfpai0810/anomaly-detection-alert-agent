@@ -24,11 +24,26 @@ def _keep_key():
     st.session_state[_KEPT] = st.session_state.get("byo_api_key", "")
 
 
+# Constant on purpose: a changed label resets the expander.
+GATE_LABEL = "Run it live with your own key (optional)"
+LIVE_ON = "Live mode is on for this session."
+LIVE_OFF = "Live mode is off. The worked examples need no key."
+
+
 def render_key_gate():
-    """Render the key input in the sidebar. Returns the per-session client, or
-    None if no valid key is present yet. Safe to call on every page."""
-    st.sidebar.markdown("### Run it yourself")
-    st.sidebar.caption(
+    """Render the key gate in the sidebar, in a closed expander, with one line
+    below it saying whether live mode is on. Returns the per-session client,
+    or None if no valid key is present yet. Safe to call on every page."""
+    with st.sidebar.expander(GATE_LABEL, expanded=False):
+        client = _gate_body()
+    st.sidebar.caption(LIVE_ON if client is not None else LIVE_OFF)
+    return client
+
+
+def _gate_body():
+    """The gate's contents: the caption, the key input, the billing sentence,
+    the privacy note and any warning. Returns the client or None."""
+    st.caption(
         "Paste your Anthropic API key to run a live analysis. "
         "Don't have one? Use the example output on the main page, no key needed.")
 
@@ -37,7 +52,7 @@ def render_key_gate():
     # kept under a non-widget key and the widget is seeded from it each run.
     if _KEPT in st.session_state:
         st.session_state["byo_api_key"] = st.session_state[_KEPT]
-    key = st.sidebar.text_input(
+    key = st.text_input(
         "Anthropic API key",
         type="password",
         placeholder="sk-ant-...",
@@ -46,13 +61,13 @@ def render_key_gate():
         help="Held in the server's memory for this session only. Never stored, never logged.",
     )
 
-    st.sidebar.caption(
+    st.caption(
         "Running a live analysis uses your own Anthropic API key and bills "
         "your Anthropic account a small amount per run. The worked examples "
         "are free and need no key.")
 
-    # Honest disclosure, always visible.
-    st.sidebar.markdown(
+    # Honest disclosure, always visible inside the gate.
+    st.markdown(
         '<div class="sc-keynote">Your key is held in the server\'s memory for '
         'your session only, used to make the call, and never stored or logged. '
         'If you would rather your key never leave your own machine, download '
@@ -65,7 +80,7 @@ def render_key_gate():
 
     # Cheap client-side sanity check before we build anything.
     if not looks_like_anthropic_key(key):
-        st.sidebar.warning(
+        st.warning(
             "That does not look like a complete Anthropic key. It should start "
             "with sk-ant- and be the full string.")
         return None
@@ -74,10 +89,10 @@ def render_key_gate():
     try:
         client = build_client(key)
     except Exception as exc:
-        st.sidebar.error(friendly_message(exc))
+        st.error(friendly_message(exc))
         return None
 
-    st.sidebar.success(KEY_LOOKS_COMPLETE)
+    st.success(KEY_LOOKS_COMPLETE)
     return client
 
 
