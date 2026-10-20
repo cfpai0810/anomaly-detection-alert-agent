@@ -40,7 +40,9 @@ from src.step2_detection_engine import detect_anomalies
 from src.step3_triage_agent import (
     build_prompt, call_claude, parse_triage_json, strip_json_block,
 )
-from src.step4_output_writer import build_pdf_bytes, build_csv_bytes, file_sha256
+from src.step4_output_writer import (
+    build_pdf_bytes, build_csv_bytes, file_sha256, format_money,
+)
 from config import (
     CLOSE_FILE, HISTORY_FILE,
     DEFAULT_ENTITY, CLOSE_PERIOD,
@@ -95,8 +97,7 @@ st.caption(
 
 display_df = close_df[["account", "actual", "prior", "budget", "forecast"]].copy()
 for col in ["actual", "prior", "budget", "forecast"]:
-    display_df[col] = display_df[col].apply(
-        lambda v: "{}{:,.0f}".format(CURRENCY_SYMBOL, v))
+    display_df[col] = display_df[col].apply(format_money)
 display_df.columns = ["Account", "Actual", "Prior month", "Budget", "Forecast"]
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -314,7 +315,7 @@ for _, row in close_df.iterrows():
             pct    = (dollar / row[bench]) if abs(row[bench]) >= eff_nz else None
 
         pct_str = "{:+.1%}".format(pct) if pct is not None else "n/a"
-        bench_parts.append("{}{:+,.0f} ({})".format(CURRENCY_SYMBOL, dollar, pct_str))
+        bench_parts.append("{} ({})".format(format_money(dollar, signed=True), pct_str))
 
     if f:
         vol_label = f["volatility"]
@@ -330,7 +331,7 @@ for _, row in close_df.iterrows():
 
     result_rows.append({
         "Account":    account,
-        "Actual":     "{}{:,.0f}".format(CURRENCY_SYMBOL, actual),
+        "Actual":     format_money(actual),
         "vs Prior":   bench_parts[0],
         "vs Budget":  bench_parts[1],
         "vs Forecast": bench_parts[2],
@@ -579,19 +580,30 @@ with tab_live:
 
             _dl_triage = list(state["matched"].values())
             _dl_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            _dl_pdf = build_pdf_bytes(
-                state["narrative"], flagged, _dl_triage,
-                state["tok_in"], state["tok_out"],
-                effective_thresholds=(eff_at, eff_gt, eff_zc, eff_nz))
+            # A PDF that fails to build shows a plain message; the CSV still
+            # downloads.
+            _dl_pdf_error = None
+            try:
+                _dl_pdf = build_pdf_bytes(
+                    state["narrative"], flagged, _dl_triage,
+                    state["tok_in"], state["tok_out"],
+                    effective_thresholds=(eff_at, eff_gt, eff_zc, eff_nz))
+            except Exception as exc:
+                _dl_pdf = None
+                _dl_pdf_error = friendly_message(exc)
             _dl_csv = build_csv_bytes(flagged, _dl_triage)
             col_pdf, col_csv = st.columns(2)
             with col_pdf:
-                st.download_button(
-                    label="Download review PDF",
-                    data=_dl_pdf,
-                    file_name="close_review_{}.pdf".format(_dl_ts),
-                    mime="application/pdf",
-                )
+                if _dl_pdf is None:
+                    st.error("The review PDF could not be built. {}".format(
+                        _dl_pdf_error))
+                else:
+                    st.download_button(
+                        label="Download review PDF",
+                        data=_dl_pdf,
+                        file_name="close_review_{}.pdf".format(_dl_ts),
+                        mime="application/pdf",
+                    )
             with col_csv:
                 st.download_button(
                     label="Download anomalies CSV",

@@ -22,6 +22,7 @@ import anthropic
 from config import (
     ANTHROPIC_API_KEY, MODEL, MAX_TOKENS,
     BENCHMARKS, BENCHMARK_MEANING, CURRENCY_CODE,
+    COST_INPUT_USD_PER_MTOK, COST_OUTPUT_USD_PER_MTOK,
 )
 
 
@@ -209,11 +210,13 @@ def call_claude(system_prompt, user_prompt, client=None):
     if output_tokens < 150 and stop_reason != "max_tokens":
         print("[WARN] Unusually short output ({} tokens).".format(output_tokens))
 
-    cost = (input_tokens * 0.000003) + (output_tokens * 0.000015)
+    # The config rates are in US dollars, so the estimate is in US dollars.
+    cost_usd = (input_tokens * COST_INPUT_USD_PER_MTOK
+                + output_tokens * COST_OUTPUT_USD_PER_MTOK) / 1_000_000
 
     print("[OK] Claude responded")
     print("     Stop reason:   {}".format(stop_reason))
     print("     Tokens:        {:,} in / {:,} out".format(input_tokens, output_tokens))
-    print("     Approx cost:   EUR {:.4f}".format(cost))
+    print("     Approx cost:   USD {:.4f}".format(cost_usd))
 
     return text, input_tokens, output_tokens, stop_reason

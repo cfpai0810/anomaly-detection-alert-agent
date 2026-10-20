@@ -1638,3 +1638,246 @@ class TestKeyGate:
         assert not at.exception
         assert isinstance(at.session_state["live_client"], anthropic.Anthropic)
         assert [b.label for b in at.button] == ["Run AI triage"]
+
+
+# =============================================================================
+# Step 2 fixes: signs, PDF text, the CLI cost line, the sidebar (items 35, 53,
+# 57, 58)
+# =============================================================================
+
+import base64
+import re
+import zlib
+from types import SimpleNamespace
+
+from src.step4_output_writer import format_money, pdf_text
+
+SAMPLE_TRIAGE_FILE = Path(__file__).resolve().parent.parent / "data" / "sample_triage.json"
+
+_STREAM = re.compile(rb"stream\r?\n(.*?)endstream", re.DOTALL)
+_TEXT_OP = re.compile(rb"\(((?:\\.|[^\\)])*)\)\s*Tj|T\*|\bTd\b|\bTD\b|\bTm\b|\bET\b", re.DOTALL)
+_PDF_ESCAPE = re.compile(rb"\\([0-7]{1,3}|.)", re.DOTALL)
+
+
+def _extract_pdf_text(pdf_bytes):
+    """The text a reader sees in a reportlab PDF, one line per text line, with
+    no extra dependency: each content stream is ASCII85 then Flate encoded,
+    and its text is the strings drawn by Tj."""
+    def unescape(raw):
+        def one(match):
+            code = match.group(1)
+            if code[:1].isdigit():
+                return bytes([int(code, 8) & 0xFF])
+            return {b"n": b"\n", b"r": b"\r", b"t": b"\t"}.get(code, code)
+        return _PDF_ESCAPE.sub(one, raw).decode("cp1252")
+
+    lines, current = [], []
+    for raw in _STREAM.findall(pdf_bytes):
+        try:
+            content = zlib.decompress(base64.a85decode(raw.strip(), adobe=True))
+        except ValueError:
+            continue
+        for match in _TEXT_OP.finditer(content):
+            if match.group(1) is not None:
+                current.append(unescape(match.group(1)))
+            elif current:
+                lines.append("".join(current))
+                current = []
+    if current:
+        lines.append("".join(current))
+    return "\n".join(lines)
+
+
+def _sample_capture():
+    return json.loads(SAMPLE_TRIAGE_FILE.read_text(encoding="utf-8"))
+
+
+def _canned_reply(text, tokens_in=1191, tokens_out=930):
+    """A stand-in for the SDK's message object."""
+    return SimpleNamespace(
+        content=[SimpleNamespace(text=text)],
+        usage=SimpleNamespace(input_tokens=tokens_in, output_tokens=tokens_out),
+        stop_reason="end_turn",
+    )
+
+
+class _ReplyingClient:
+    """A stand-in client whose model call returns a canned reply."""
+
+    def __init__(self, reply):
+        self.messages = SimpleNamespace(create=lambda **kwargs: reply)
+
+
+def _reply_from_capture(triage):
+    capture = _sample_capture()
+    return _canned_reply(
+        capture["narrative"] + "\n\n```json\n"
+        + json.dumps({"triage": triage}) + "\n```")
+
+
+def _close_scan_after_run(reply):
+    """Run the Close Scan page with a stand-in client and click Run AI triage."""
+    with patch("anthropic.Anthropic", lambda api_key=None, **kw: _ReplyingClient(reply)):
+        at = _app_test()
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        at.switch_page("pages/close_scan.py").run()
+        at.button(key="run_triage").click().run()
+    return at
+
+
+def _download_labels(at):
+    return [el.proto.label for el in at.get("download_button")]
+
+
+class TestSignBeforeSymbol:
+    """Amounts read -€30,000, never €-30,000 (item 58). The sign is the
+    arithmetic of actual less benchmark. P3 shows no arrow or colour for the
+    direction of a change, so no polarity rule applies."""
+
+    def test_item58_revenue_loss(self):
+        # Revenue: actual 1,290,000 against prior 1,320,000
+        assert format_money(1290000 - 1320000, signed=True) == "-€30,000"
+
+    def test_item58_revenue_gain(self):
+        assert format_money(25000, signed=True) == "+€25,000"
+
+    def test_item58_cost_rise(self):
+        # Marketing Spend: actual 143,000 against prior 96,000
+        assert format_money(143000 - 96000, signed=True) == "+€47,000"
+
+    def test_item58_cost_fall(self):
+        assert format_money(-12000, signed=True) == "-€12,000"
+
+    def test_item58_unsigned_amounts(self):
+        assert format_money(143000) == "€143,000"
+        assert format_money(-5000) == "-€5,000"
+        assert format_money(-0.4, signed=True) == "+€0"
+
+    def test_item58_close_scan_table(self):
+        at = _app_test()
+        at.switch_page("pages/close_scan.py").run()
+        table = next(d.value for d in at.dataframe if "vs Prior" in d.value.columns)
+        rows = table.set_index("Account")
+        assert rows.loc["Revenue", "vs Prior"] == "-€30,000 (-2.3%)"
+        assert rows.loc["Revenue", "vs Budget"] == "-€10,000 (-0.8%)"
+        assert rows.loc["COGS", "vs Prior"] == "+€12,000 (+2.2%)"
+        assert rows.loc["Marketing Spend", "vs Prior"] == "+€47,000 (+49.0%)"
+        cells = " ".join(str(v) for v in table.to_numpy().ravel())
+        assert "€-" not in cells and "€+" not in cells
+
+
+class TestPdfText:
+    """Model, data and reviewer text is escaped for the PDF (item 35), and the
+    PDF's summary and sentences read correctly (item 58)."""
+
+    MARKUP = [
+        {"account": "Travel & Ent", "priority": "HIGH", "assessment": "timing",
+         "headline": "<1k & up", "story": "a<b and <b unclosed",
+         "hypothesis": "R&D <5% over plan.", "confidence": "<low>"},
+    ]
+
+    def test_item35_helper_escapes_ampersand_first(self):
+        assert pdf_text("R&D <b> & x > y") == "R&amp;D &lt;b&gt; &amp; x &gt; y"
+
+    def test_item35_model_markup_builds_pdf(self, flagged):
+        pdf = build_pdf_bytes(
+            "# Title\n\nThree <5% accounts & a <b tag need review.\n",
+            flagged, self.MARKUP, 10, 20)
+        assert pdf[:5] == b"%PDF-"
+        text = _extract_pdf_text(pdf)
+        assert "<1k & up" in text
+        assert "a<b and <b unclosed." in text
+        assert "R&D <5% over plan." in text
+        assert "Summary. Three <5% accounts & a <b tag need review." in text
+        assert "&amp;" not in text and "&lt;" not in text
+
+    def test_item35_markup_in_account_and_thresholds(self, flagged):
+        triage = [dict(self.MARKUP[0], account="<unknown> & co")]
+        custom_at = {"<b>Odd & name": {"pct_band": 0.1, "min_dollar_floor": 1,
+                                        "big_dollar": 2}}
+        pdf = build_pdf_bytes(
+            "Summary.", flagged, triage, 10, 20,
+            effective_thresholds=(custom_at, GLOBAL_THRESHOLD, 3.5, 1000))
+        text = _extract_pdf_text(pdf)
+        assert "<unknown> & co" in text
+        assert "<b>Odd & name" in text
+
+    def test_item58_pdf_summary_is_the_summary_sentence(self, flagged):
+        capture = _sample_capture()
+        text = _extract_pdf_text(build_pdf_bytes(
+            capture["narrative"], flagged, capture["triage"], 1191, 930))
+        summary = [l for l in text.splitlines() if l.startswith("Summary.")]
+        assert summary == ["Summary. Three accounts need attention: two are "
+                           "likely timing and one is likely permanent."]
+
+    def test_item58_pdf_no_double_full_stop(self, flagged):
+        capture = _sample_capture()
+        text = _extract_pdf_text(build_pdf_bytes(
+            capture["narrative"], flagged, capture["triage"], 1191, 930))
+        assert "capture. Confidence medium." in text
+        assert ".." not in text
+
+    def test_item58_pdf_has_no_rule_line(self, flagged):
+        capture = _sample_capture()
+        assert "\n---" in capture["narrative"]
+        text = _extract_pdf_text(build_pdf_bytes(
+            capture["narrative"], flagged, capture["triage"], 1191, 930))
+        assert "---" not in text
+
+    def test_item58_pdf_actual_sign_before_symbol(self, flagged):
+        negative = [dict(f, actual=-5000) for f in flagged]
+        text = _extract_pdf_text(build_pdf_bytes("Summary.", negative, [], 10, 20))
+        assert "actual -€5,000" in text
+        assert "€-" not in text
+
+    def test_item35_close_scan_pdf_with_markup_downloads(self):
+        """A live run whose reply has <b, & and < offers both downloads."""
+        capture = _sample_capture()
+        triage = [dict(t) for t in capture["triage"]]
+        triage[0]["hypothesis"] = "R&D <b unclosed <5% over plan"
+        at = _close_scan_after_run(_reply_from_capture(triage))
+        assert not at.exception
+        assert [e.value for e in at.error] == []
+        assert _download_labels(at) == ["Download review PDF", "Download anomalies CSV"]
+
+    def test_item35_close_scan_pdf_failure_keeps_csv(self):
+        """If the PDF cannot be built, a plain message shows and the CSV still
+        downloads."""
+        capture = _sample_capture()
+        reply = _reply_from_capture(capture["triage"])
+        with patch("src.step4_output_writer.build_pdf_bytes",
+                   side_effect=ValueError("paraparser: syntax error")):
+            at = _close_scan_after_run(reply)
+        assert not at.exception
+        errors = [e.value for e in at.error]
+        assert errors == ["The review PDF could not be built. Something went "
+                          "wrong running that request. Please try again."]
+        assert _download_labels(at) == ["Download anomalies CSV"]
+
+
+class TestCliCostLine:
+    """The CLI cost line is in the currency it is computed in (item 57)."""
+
+    def test_item57_cli_cost_line_is_usd(self, capsys):
+        call_claude("system", "user", client=_ReplyingClient(_canned_reply("x " * 200)))
+        out = capsys.readouterr().out
+        line = next(l for l in out.splitlines() if "Approx cost" in l)
+        # 1,191 x 3.00 / 1M + 930 x 15.00 / 1M = 0.003573 + 0.013950 = 0.017523
+        assert line.strip() == "Approx cost:   USD 0.0175"
+        assert "EUR" not in line
+
+    def test_item57_cli_cost_reads_config_rates(self, capsys):
+        with patch("src.step3_triage_agent.COST_INPUT_USD_PER_MTOK", 6.0):
+            call_claude("system", "user", client=_ReplyingClient(_canned_reply("x " * 200)))
+        line = next(l for l in capsys.readouterr().out.splitlines() if "Approx cost" in l)
+        # 1,191 x 6.00 / 1M + 930 x 15.00 / 1M = 0.007146 + 0.013950 = 0.021096
+        assert line.strip() == "Approx cost:   USD 0.0211"
+
+
+class TestSidebarState:
+    """The sidebar opens on a wide screen and stays closed on a phone (item 53)."""
+
+    def test_item53_initial_sidebar_state_auto(self):
+        source = APP_HOME.read_text(encoding="utf-8")
+        assert 'initial_sidebar_state="auto"' in source
+        assert 'initial_sidebar_state="expanded"' not in source

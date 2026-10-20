@@ -105,9 +105,25 @@ def file_sha256(path):
         return "sha256:" + hashlib.sha256(fh.read()).hexdigest()
 
 
+def pdf_text(value):
+    """Escape data, model or reviewer text for a reportlab Paragraph, which
+    reads its text as markup: & first, then < and >. Without this a stray
+    "<" or "&" in model text stops the PDF from building."""
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def format_money(value, signed=False):
+    """An amount with the currency symbol and the sign before the symbol:
+    -€30,000, never €-30,000. With signed=True a rise shows a plus sign."""
+    amount = round(value)
+    sign = "-" if amount < 0 else ("+" if signed else "")
+    return "{}{}{:,.0f}".format(sign, CURRENCY_SYMBOL, abs(amount))
+
+
 def clean_markdown(text):
-    """Strip markdown artefacts before PDF rendering. Escape & first."""
-    text = text.replace("&", "&amp;")
+    """Strip markdown artefacts before PDF rendering. Escapes the text first
+    (pdf_text), then turns **bold** into the PDF's own bold markup."""
+    text = pdf_text(text)
     text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'^#{1,3}\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'^---+\s*$',   '', text, flags=re.MULTILINE)
@@ -192,7 +208,7 @@ def _cover_block(entity, period, n_flagged, ts, tok_in, tok_out):
                 textColor=colors.white, alignment=TA_CENTER))],
         [Paragraph(
             '<font color="#AACCEE">{}  ·  Close {}  ·  {} accounts flagged</font>'.format(
-                entity, period, n_flagged),
+                pdf_text(entity), pdf_text(period), n_flagged),
             ParagraphStyle("CS", fontName="Helvetica", fontSize=9,
                 textColor=colors.HexColor("#AACCEE"), alignment=TA_CENTER))],
         [Paragraph(
@@ -250,11 +266,11 @@ def _anomaly_card(flag, triage_lookup):
 
     hdr = Table([[
         Paragraph(
-            '<b>{}</b>  <font size="8" color="#898781">actual {}{:,.0f}</font>'.format(
-                account, CURRENCY_SYMBOL, actual),
+            '<b>{}</b>  <font size="8" color="#898781">actual {}</font>'.format(
+                pdf_text(account), format_money(actual)),
             ParagraphStyle("h", fontName="Helvetica", fontSize=11,
                 textColor=DARK_BLUE, leading=14)),
-        Paragraph('<b>{}</b>'.format(priority),
+        Paragraph('<b>{}</b>'.format(pdf_text(priority)),
             ParagraphStyle("p", fontName="Helvetica-Bold", fontSize=9,
                 textColor=tc, alignment=TA_RIGHT, leading=12)),
     ]], colWidths=[PAGE_W - 3*cm, 3*cm])
@@ -300,18 +316,18 @@ def _anomaly_card(flag, triage_lookup):
         note_text = ""
         if assessment:
             note_text += '<font color="#2D6A9F"><b>{}</b></font>. '.format(
-                assessment.capitalize())
+                pdf_text(assessment.capitalize()))
         if hypothesis:
             note_text += '<b>Likely cause:</b> ' + clean_markdown(hypothesis) + " "
         extras = []
         if confidence:
-            extras.append("confidence {}".format(confidence))
-        extras.append("volatility {}".format(volatility))
+            extras.append("confidence {}".format(pdf_text(confidence)))
+        extras.append("volatility {}".format(pdf_text(volatility)))
         note_text += '<font color="#898781">({})</font>'.format(", ".join(extras))
         note = Paragraph(note_text, S_CARD)
     else:
         note = Paragraph(
-            '<font color="#898781">volatility {}</font>'.format(volatility), S_CARD)
+            '<font color="#898781">volatility {}</font>'.format(pdf_text(volatility)), S_CARD)
 
     return KeepTogether([hdr, Spacer(1, 0.1*cm), vt, Spacer(1, 0.12*cm),
                          note, Spacer(1, 0.35*cm)])
@@ -348,7 +364,7 @@ def _threshold_summary_box(account_thresholds, global_threshold, z_cutoff,
     for account in sorted(account_thresholds):
         at = account_thresholds[account]
         rows.append([
-            Paragraph(account, S_TBL),
+            Paragraph(pdf_text(account), S_TBL),
             Paragraph("{:.1%}".format(at["pct_band"]), S_TBL_NUM),
             Paragraph("{:,.0f}".format(at["min_dollar_floor"]), S_TBL_NUM),
             Paragraph("{:,.0f}".format(at["big_dollar"]), S_TBL_NUM),
@@ -428,23 +444,31 @@ def _methodology_box(effective_thresholds=None):
 def _narrative_highlights(triage_narrative):
     """Pull the opening summary sentence and the RECOMMENDED ACTIONS line
     from the triage narrative. The per-account detail already lives in the
-    cards, so the notes section shows only these two highlights."""
-    text = clean_markdown(triage_narrative)
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    cards, so the notes section shows only these two highlights. Both come
+    back as the model wrote them; the caller cleans them once for the PDF."""
+    lines = [l.strip() for l in triage_narrative.split("\n") if l.strip()]
 
     summary = ""
     for line in lines:
-        # first real sentence that is not a section marker
-        if line.upper() not in ("ANOMALY TRIAGE",) and not line.endswith("]"):
+        # first real sentence: not a markdown title, a rule, a section
+        # marker or an account header such as **Travel & Ent [HIGH]**
+        if line.startswith("#") or re.fullmatch(r"-{3,}", line):
+            continue
+        if line.upper() not in ("ANOMALY TRIAGE",) and not line.rstrip("*").endswith("]"):
             summary = line
             break
 
     rec = ""
-    m = re.search(r'RECOMMENDED ACTIONS:?\s*(.+)', text, re.DOTALL | re.IGNORECASE)
+    m = re.search(r'RECOMMENDED ACTIONS[:*\s]*(.+)', triage_narrative, re.IGNORECASE)
     if m:
-        rec = m.group(1).strip().split("\n")[0]
+        rec = m.group(1).strip()
 
     return summary, rec
+
+
+def _with_full_stop(text):
+    """End a sentence with one full stop, whether or not the model wrote one."""
+    return text.rstrip().rstrip(".") + "."
 
 
 def _triage_narrative_section(triage_json, summary):
@@ -481,10 +505,10 @@ def _triage_narrative_section(triage_json, summary):
         assess_color = "#A32D2D" if assessment.lower() == "permanent" else "#854F0B"
         row_bg = bg if priority == "HIGH" else LIGHT_BLUE
 
-        left  = Paragraph(account, S_ACCT)
+        left  = Paragraph(pdf_text(account), S_ACCT)
         head  = Paragraph(headline, S_HEAD)
         badge = Table([[Paragraph(
-            '<font color="white"><b>{}</b></font>'.format(priority),
+            '<font color="white"><b>{}</b></font>'.format(pdf_text(priority)),
             ParagraphStyle("bdg", fontName="Helvetica-Bold", fontSize=8,
                 textColor=colors.white, alignment=TA_CENTER, leading=10))]],
             colWidths=[1.9*cm])
@@ -496,17 +520,18 @@ def _triage_narrative_section(triage_json, summary):
 
         line2_bits = []
         if assessment:
-            line2_bits.append('<font color="{}"><b>{}.</b></font>'.format(
-                assess_color, assessment.capitalize()))
+            line2_bits.append('<font color="{}"><b>{}</b></font>'.format(
+                assess_color, _with_full_stop(pdf_text(assessment.capitalize()))))
         if story:
-            line2_bits.append(story + ".")
+            line2_bits.append(_with_full_stop(story))
         line2 = Paragraph(" ".join(line2_bits), S_NARR)
 
         line3_bits = []
         if hypothesis:
-            line3_bits.append("<b>Likely cause:</b> " + hypothesis + ".")
+            line3_bits.append("<b>Likely cause:</b> " + _with_full_stop(hypothesis))
         if confidence:
-            line3_bits.append('<font color="#898781">Confidence {}.</font>'.format(confidence))
+            line3_bits.append('<font color="#898781">Confidence {}</font>'.format(
+                _with_full_stop(pdf_text(confidence))))
         line3 = Paragraph(" ".join(line3_bits), S_NARR)
 
         row = Table(
@@ -559,7 +584,7 @@ def _build_pdf_story(triage_narrative, flagged, triage_json, tok_in, tok_out,
         for element in _triage_narrative_section(triage_json, summary):
             story.append(element)
     elif summary:
-        story.append(Paragraph("<b>Summary.</b> " + summary, S_BODY))
+        story.append(Paragraph("<b>Summary.</b> " + clean_markdown(summary), S_BODY))
     story.append(Spacer(1, 0.25 * cm))
 
     story.append(_section_header("VARIANCE DETAIL BY ACCOUNT"))
