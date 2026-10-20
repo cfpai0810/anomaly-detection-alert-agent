@@ -2024,3 +2024,42 @@ class TestActionsCallout:
             lines = [line.strip() for line in body.split("<br>")]
             assert not any(re.fullmatch(r"([-*_])\1{2,}", line) for line in lines)
         assert actions[0].endswith("misposted invoice.</div>")
+
+
+class TestDependencies:
+    """The pinned packages (items 21 and 22): test tools only in the dev file,
+    no byte order mark, one anthropic version, patched versions."""
+
+    @staticmethod
+    def _pins(name):
+        text = (Path(__file__).resolve().parent.parent / name).read_text(encoding="utf-8-sig")
+        pins = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith(("#", "-r")) and "==" in line:
+                package, version = line.split("==", 1)
+                pins[package.strip().lower()] = version.strip()
+        return text, pins
+
+    @staticmethod
+    def _version(text):
+        return tuple(int(part) for part in text.split(".")[:3])
+
+    def test_item21_test_tools_only_in_dev_requirements(self):
+        _, runtime = self._pins("requirements.txt")
+        dev_text, dev = self._pins("requirements-dev.txt")
+        assert not {"pytest", "pluggy", "iniconfig", "pygments", "colorama"} & set(runtime)
+        assert "-r requirements.txt" in dev_text and "pytest" in dev
+
+    def test_item21_no_byte_order_mark(self):
+        root = Path(__file__).resolve().parent.parent
+        for name in ("requirements.txt", "requirements-dev.txt"):
+            assert not (root / name).read_bytes().startswith(b"\xef\xbb\xbf"), name
+
+    def test_item21_one_anthropic_version(self):
+        assert self._pins("requirements.txt")[1]["anthropic"] == "0.116.0"
+
+    def test_item22_patched_versions(self):
+        pins = self._pins("requirements.txt")[1]
+        assert self._version(pins["anyio"]) >= (4, 14, 2)
+        assert self._version(pins["pillow"]) >= (12, 3, 0)
