@@ -497,8 +497,12 @@ if "triage_state" in st.session_state:
         del st.session_state["triage_state"]
         _stale_cleared = True
 
+# Home's "See the worked example" button opens this page on the example tab.
+_open_example = st.session_state.pop("cs_open_example", False)
 tab_live, tab_example = st.tabs(
-    ["Run it yourself", "View a worked example"])
+    ["Run it yourself", "View a worked example"],
+    default="View a worked example" if _open_example else None,
+    key="cs_triage_tabs")
 
 with tab_live:
     if _stale_cleared:

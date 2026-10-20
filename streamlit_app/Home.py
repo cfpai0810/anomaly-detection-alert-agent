@@ -37,6 +37,7 @@ def _home_page():
 
     # -- One step to the worked example, which needs no key -------------------
     if st.button("See the worked example", key="see_worked_example"):
+        st.session_state[OPEN_EXAMPLE_TAB] = True
         st.switch_page(CLOSE_SCAN_PAGE)
 
     # -- The key gate (sidebar): returns a per-session client or None ---------
@@ -147,8 +148,10 @@ st.set_page_config(
 PAGES_DIR = Path(__file__).resolve().parent / "pages"
 
 # The worked example lives on this page, in its "View a worked example" tab.
+# The Home button sets this flag so that page opens on the example tab.
 CLOSE_SCAN_PAGE = st.Page(str(PAGES_DIR / "close_scan.py"),
                           title="Close Scan", icon=":material/search:")
+OPEN_EXAMPLE_TAB = "cs_open_example"
 
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),

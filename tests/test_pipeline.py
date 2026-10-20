@@ -1955,3 +1955,46 @@ class TestTabularFigures:
         selector = rule[rule.index("*/") + 2:rule.index("{")]
         assert "table" in [s.strip() for s in selector.split(",")]
         assert '"tnum" 1' in rule
+
+
+# =============================================================================
+# Step 3: the Home button opens the worked example tab (UX2)
+# =============================================================================
+
+def _blocks_of_type(node, block_type):
+    """Every block of one type under an AppTest node, in page order."""
+    found = []
+    for child in getattr(node, "children", {}).values():
+        if getattr(child, "type", None) == block_type:
+            found.append(child)
+        found.extend(_blocks_of_type(child, block_type))
+    return found
+
+
+class TestWorkedExampleTab:
+    """Home's button opens Close Scan on its "View a worked example" tab; the
+    sidebar link still opens the first tab (UX2)."""
+
+    def test_ux2_button_opens_the_example_tab(self):
+        at = _app_test()
+        at.button(key="see_worked_example").click().run()
+        assert not at.exception
+        assert any("<h1>Close Anomaly Scan</h1>" in m.value for m in at.markdown)
+        tab_sets = _blocks_of_type(at.main, "tab_container")
+        assert len(tab_sets) == 1
+        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
+        assert tab_sets[0].proto.tab_container.default_tab_index == 1
+        # A fixed key keeps the chosen tab when a rerun changes the layout
+        # above the tabs (the threshold mode radio).
+        assert tab_sets[0].proto.id.endswith("-cs_triage_tabs")
+        # The flag is used once: the next run of the page has no default.
+        assert "cs_open_example" not in at.session_state
+        assert at.session_state["live_client"] is None
+
+    def test_ux2_sidebar_link_still_opens_the_first_tab(self):
+        at = _app_test()
+        at.switch_page("pages/close_scan.py").run()
+        assert not at.exception
+        tab_sets = _blocks_of_type(at.main, "tab_container")
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
