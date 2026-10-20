@@ -89,7 +89,7 @@ def _home_page():
     st.write(
         "Everything here runs on Valencia Operations, a synthetic company "
         "invented for the demo. Its close data and account history describe "
-        "a month-end close for June 2026, with seven accounts and twelve "
+        "a month-end close for June 2026, with eight accounts and twelve "
         "months of trailing history. Because the company and its numbers are "
         "entirely fictional, nothing you do on this site touches real or "
         "personal information.")
@@ -126,8 +126,8 @@ def _home_page():
             "What it costs. Each run makes one short call to Claude Sonnet "
             "to triage the flagged anomalies. At Sonnet's current rate of "
             "about three US dollars per million input tokens and fifteen per "
-            "million output tokens, a single scan is well under one US cent "
-            "in practice.")
+            "million output tokens, one triage costs about 1.8 US cents: the "
+            "worked example's run used 1,191 input and 930 output tokens.")
         st.caption(
             "Your key is used only for your session and is not stored by "
             "this site. On the web the data stays sample-only; to work on "

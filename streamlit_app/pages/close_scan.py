@@ -288,7 +288,7 @@ flagged_lookup = {f["account"]: f for f in flagged}
 
 
 # =============================================================================
-# FLAGGED TABLE — all seven accounts, flagged ones highlighted
+# FLAGGED TABLE: all eight accounts, flagged ones highlighted
 # =============================================================================
 
 st.markdown("#### Scan results")
@@ -629,8 +629,10 @@ with tab_live:
 with tab_example:
     if fingerprint == example["fingerprint"]:
         st.caption(
-            "This is a captured model output at the default sensitivity. "
-            "Enter an API key in the sidebar to run live triage.")
+            "This is a captured model output at the default sensitivity, as "
+            "the model wrote it except for edits made afterwards: \"EUR\" was "
+            "added before three amounts, and \"absolute terms\" became \"euro "
+            "terms\". Enter an API key in the sidebar to run live triage.")
         _ex_summary = ""
         _ex_actions = ""
         if example["narrative"]:

@@ -2,9 +2,15 @@
 # lib/example.py -- keyless worked example for the close anomaly scan
 # =============================================================================
 # Recomputes detection from the committed sample data at default thresholds,
-# then reads the captured AI triage verbatim from the committed JSON file.
-# The pattern follows Project 1: deterministic parts recomputed, AI parts
-# read verbatim, never fabricated.
+# then reads the captured AI triage from the committed JSON file. That text
+# is the model's output from one run (the run in docs/sample_output.txt,
+# 1,191 input and 930 output tokens), with "EUR" added before three amounts
+# in the narrative afterwards: "euro terms (EUR 44k", "identical EUR 6k" and
+# "the EUR 143k" (the run wrote "absolute terms (44k", "identical 6k" and
+# "the 143k"). Nothing else in the narrative was changed, and the triage
+# entries match docs/sample_anomalies.csv from the same run. The pattern
+# follows Project 1: deterministic parts recomputed, AI parts read from a
+# saved run.
 # =============================================================================
 
 import json

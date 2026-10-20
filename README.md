@@ -143,7 +143,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               52 assertions across 9 test classes
+  test_pipeline.py               204 tests
 ```
 
 ---
@@ -183,7 +183,11 @@ anomaly-detection systems.
 
 ## Audit trail
 
-Every run appends one record to `output/audit_log.jsonl`:
+A run of `python main.py` appends one record to `output/audit_log.jsonl` when
+it flags at least one account and the model call succeeds. A clean close
+(nothing flagged), a missing key or a failed model call writes no record.
+`python review.py` adds none either: it updates the latest record with the
+sign-off. The web app does not write to this file.
 
 ```json
 {
@@ -216,7 +220,7 @@ record also carries `reviewed_by`, `reviewed_at`, and the disposition counts.
 
 ## Test suite
 
-52 assertions across 9 test classes. No real API calls. Runs in under a minute:
+204 tests. No real API calls. A full run takes about one to two minutes:
 
 ```bash
 pytest tests/test_pipeline.py -v
@@ -231,7 +235,8 @@ name normalisation, and output writing with the audit trail.
 
 ## Tech stack
 
-Python 3.11 · pandas · Anthropic Claude API · python-dotenv · reportlab ·
+Python (tested on Python 3.13 and 3.14; numpy 2.5 needs Python 3.12 or later) ·
+pandas · Streamlit · Anthropic Claude API · python-dotenv · reportlab ·
 hashlib · pytest
 
 ---

@@ -6,7 +6,8 @@
 # Run from the project root with (venv) active:
 #   pytest tests/test_pipeline.py -v
 #
-# Seventeen test classes covering the full detection surface:
+# The first twenty test classes cover the detection surface; the classes
+# after them (not listed) are regression tests for later fixes:
 #   1. Data loading             — close and history load and validate
 #   2. safe_variance            — the near-zero denominator guard
 #   3. is_material              — the three-part materiality rule
@@ -28,8 +29,8 @@
 #  18. two-mode redesign        — mode mapping, isolation, example, stale-clear
 #  19. volatility-only account  — Utilities flags on z-score, not materiality
 #
-# No real API calls. The Claude call is mocked so the suite runs fast and
-# costs nothing.
+# No real API calls. Most tests never reach the model; the few that do use
+# stand-in clients, so the suite costs nothing and needs no key.
 # =============================================================================
 
 import io
@@ -1013,9 +1014,10 @@ class TestGovernanceAndExample:
         det_names = sorted(f["account"] for f in flagged)
         assert ex_names == det_names
 
-    def test_fabrication_triage_verbatim(self):
-        """The captured narrative contains text that also appears in the
-        committed sample_output.txt, proving it was not fabricated."""
+    def test_example_shares_an_opening_sentence_with_sample_output(self):
+        """The saved narrative and docs/sample_output.txt both contain the
+        sentence "Three accounts need attention". This checks that one
+        sentence only, not the rest of the text."""
         from streamlit_app.lib.example import SAMPLE_TRIAGE
         with open(SAMPLE_TRIAGE, encoding="utf-8") as f:
             captured = json.load(f)

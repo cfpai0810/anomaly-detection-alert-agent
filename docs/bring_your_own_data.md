@@ -104,9 +104,10 @@ for full control over the exact numbers).
 ## Running it
 
 You need your own Anthropic API key for the AI triage (the scan
-itself does not need one). The app reads the key from the sidebar
-for the session, and it can also be provided through the
-`ANTHROPIC_API_KEY` environment variable.
+itself does not need one). The web app uses only the key you paste
+in its sidebar, for that session. The command-line version
+(`python main.py`, below) reads the key from the `ANTHROPIC_API_KEY`
+environment variable or a `.env` file.
 
 From the project root:
 
