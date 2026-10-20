@@ -185,14 +185,16 @@ def call_claude(system_prompt, user_prompt, client=None):
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
-    except anthropic.AuthenticationError:
-        raise RuntimeError("Authentication failed. Check ANTHROPIC_API_KEY in .env.")
-    except anthropic.RateLimitError:
-        raise RuntimeError("Rate limit reached. Wait 60 seconds and try again.")
-    except anthropic.APIStatusError as e:
-        raise RuntimeError("API error {}: {}".format(e.status_code, e.message))
-    except anthropic.APIConnectionError:
-        raise RuntimeError("Cannot connect to Anthropic API. Check connection.")
+    # Each wrap keeps the SDK error as its cause, so the web app can still
+    # map it to one plain message (streamlit_app/lib/errors.py).
+    except anthropic.AuthenticationError as exc:
+        raise RuntimeError("Authentication failed. Check ANTHROPIC_API_KEY in .env.") from exc
+    except anthropic.RateLimitError as exc:
+        raise RuntimeError("Rate limit reached. Wait 60 seconds and try again.") from exc
+    except anthropic.APIStatusError as exc:
+        raise RuntimeError("API error {}: {}".format(exc.status_code, exc.message)) from exc
+    except anthropic.APIConnectionError as exc:
+        raise RuntimeError("Cannot connect to Anthropic API. Check connection.") from exc
 
     if not response.content:
         raise RuntimeError("Claude returned an empty response.")

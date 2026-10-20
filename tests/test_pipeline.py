@@ -1468,3 +1468,173 @@ class TestDeploymentPins:
         if version("streamlit").startswith("1.60."):
             major, minor = (int(part) for part in version("starlette").split(".")[:2])
             assert (major, minor) < (1, 8)
+
+
+# =============================================================================
+# Step 2 fixes: plain failure messages and the key gate (items 2, 4, 17, 55)
+# =============================================================================
+
+import anthropic
+import httpx
+
+from streamlit_app.lib.errors import (
+    friendly_message, failure_code, model_failure_message,
+    MODEL_FAILURE_MESSAGES, KEY_LOOKS_COMPLETE,
+)
+from src.step3_triage_agent import call_claude
+
+APP_HOME = Path(__file__).resolve().parent.parent / "streamlit_app" / "Home.py"
+TEST_KEY = "sk-ant-api03-" + "x" * 90
+
+
+def _sdk_status_error(cls, status):
+    """A stand-in SDK error for one HTTP status, built without the network."""
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(status, request=request)
+    return cls("stand-in", response=response, body=None)
+
+
+def _sdk_connection_error():
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.APIConnectionError(request=request)
+
+
+class _RaisingMessages:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def create(self, **kwargs):
+        raise self._exc
+
+
+class _RaisingClient:
+    """A stand-in client whose model call fails with a given SDK error."""
+
+    def __init__(self, exc):
+        self.messages = _RaisingMessages(exc)
+
+
+def _app_test():
+    from streamlit.testing.v1 import AppTest
+    return AppTest.from_file(str(APP_HOME), default_timeout=60).run()
+
+
+SDK_CASES = [
+    (anthropic.AuthenticationError, 401, "key_rejected"),
+    (anthropic.PermissionDeniedError, 403, "key_forbidden"),
+    (anthropic.NotFoundError, 404, "model_not_found"),
+    (anthropic.RateLimitError, 429, "rate_limited"),
+    (anthropic.BadRequestError, 400, "bad_request"),
+    (anthropic.InternalServerError, 500, "service_unavailable"),
+    (anthropic.APIStatusError, 529, "service_unavailable"),
+]
+
+
+class TestPlainFailureMessages:
+    """One plain message per kind of failed model call (items 17 and 55)."""
+
+    @pytest.mark.parametrize("cls,status,code", SDK_CASES)
+    def test_item17_sdk_error_maps_to_code(self, cls, status, code):
+        exc = _sdk_status_error(cls, status)
+        assert failure_code(exc) == code
+        message = friendly_message(exc)
+        assert message == model_failure_message(code)
+        assert message.endswith("Code: `{}`".format(code))
+        assert cls.__name__ not in message
+        assert "Error" not in message
+
+    def test_item17_connection_error_maps_to_service_unavailable(self):
+        exc = _sdk_connection_error()
+        assert failure_code(exc) == "service_unavailable"
+        assert "APIConnectionError" not in friendly_message(exc)
+
+    @pytest.mark.parametrize("cls,status,code", SDK_CASES)
+    def test_item55_engine_wrap_still_maps(self, cls, status, code):
+        """call_claude wraps the SDK error in RuntimeError; the cause chain
+        still leads to the right plain line, never the generic one."""
+        client = _RaisingClient(_sdk_status_error(cls, status))
+        with pytest.raises(RuntimeError) as info:
+            call_claude("system", "user", client=client)
+        assert isinstance(info.value.__cause__, cls)
+        assert friendly_message(info.value) == model_failure_message(code)
+
+    def test_item55_wrapped_connection_error_maps(self):
+        client = _RaisingClient(_sdk_connection_error())
+        with pytest.raises(RuntimeError) as info:
+            call_claude("system", "user", client=client)
+        assert failure_code(info.value) == "service_unavailable"
+
+    def test_item17_wording_rules(self):
+        for code in ("bad_request", "model_not_found"):
+            assert "usually temporary" not in model_failure_message(code)
+        assert "claude-" in model_failure_message("model_not_found")
+        generic = friendly_message(ValueError("boom"))
+        assert generic == "Something went wrong running that request. Please try again."
+        texts = list(MODEL_FAILURE_MESSAGES.values()) + [generic]
+        for text in texts:
+            assert "example prompts" not in text
+            assert "above" not in text
+
+    def test_item17_no_key_message_points_to_sidebar(self):
+        from streamlit_app.lib.claude_client import NoKeyError
+        message = friendly_message(NoKeyError("No API key provided."))
+        assert "in the sidebar" in message
+        assert "above" not in message
+
+    def test_item55_close_scan_shows_key_rejected_line(self):
+        """A rejected key on the Close Scan page shows the key_rejected line,
+        not the generic one, and records no audit run."""
+        rejected = _sdk_status_error(anthropic.AuthenticationError, 401)
+
+        def stand_in_anthropic(api_key=None, **kwargs):
+            return _RaisingClient(rejected)
+
+        with patch("anthropic.Anthropic", stand_in_anthropic):
+            at = _app_test()
+            at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+            at.switch_page("pages/close_scan.py").run()
+            at.button(key="run_triage").click().run()
+        errors = [e.value for e in at.error]
+        assert errors == [model_failure_message("key_rejected")]
+        assert "scan_audit" not in at.session_state
+
+
+class TestKeyGate:
+    """The sidebar key gate: privacy wording and persistence (items 2 and 4)."""
+
+    NOTE = ("Your key is held in the server's memory for your session only, "
+            "used to make the call, and never stored or logged. If you would "
+            "rather your key never leave your own machine, download the "
+            "project from GitHub and run it locally.")
+
+    def test_item2_privacy_wording(self):
+        at = _app_test()
+        box = at.sidebar.text_input(key="byo_api_key")
+        assert box.help == ("Held in the server's memory for this session "
+                            "only. Never stored, never logged.")
+        sidebar_text = " ".join(m.value for m in at.sidebar.markdown)
+        assert self.NOTE in sidebar_text
+        assert "browser" not in sidebar_text
+
+    def test_item2_success_line_is_not_a_verdict(self):
+        at = _app_test()
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        assert [s.value for s in at.sidebar.success] == [KEY_LOOKS_COMPLETE]
+
+    def test_item2_header_comment(self):
+        source = (APP_HOME.parent / "lib" / "key_gate.py").read_text(encoding="utf-8")
+        assert "never stored server-side" not in source
+        assert "browser" not in source
+
+    def test_item4_key_persists_across_pages(self):
+        """A key entered on Home is still in effect on the Close Scan page,
+        after a visit to a page that has no key gate. No network call: the
+        client is only constructed."""
+        at = _app_test()
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        assert isinstance(at.session_state["live_client"], anthropic.Anthropic)
+        at.switch_page("pages/how_it_works.py").run()
+        at.switch_page("pages/close_scan.py").run()
+        assert not at.exception
+        assert isinstance(at.session_state["live_client"], anthropic.Anthropic)
+        assert [b.label for b in at.button] == ["Run AI triage"]
