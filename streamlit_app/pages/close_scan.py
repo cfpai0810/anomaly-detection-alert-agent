@@ -401,13 +401,23 @@ def _render_narrative(text):
     )
 
 
+def _drop_rule_lines(text):
+    """Remove horizontal-rule lines ("---", "***", "___"), which a callout
+    would show as literal text. The narrative ends with one."""
+    import re
+    return "\n".join(
+        line for line in text.split("\n")
+        if not re.fullmatch(r"\s*([-*_])(\s*\1){2,}\s*", line)).strip()
+
+
 def _split_narrative(narrative):
     """Split the narrative into summary and recommended actions.
 
     The per-account prose is skipped because the triage cards present
     the same information in a more structured format.
     """
-    sections = [s.strip() for s in narrative.split("\n---\n") if s.strip()]
+    sections = [_drop_rule_lines(s) for s in narrative.split("\n---\n")]
+    sections = [s for s in sections if s]
     summary = sections[0] if sections else ""
     if summary.startswith("# "):
         newline = summary.find("\n")

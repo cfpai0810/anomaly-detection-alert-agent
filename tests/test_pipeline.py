@@ -1998,3 +1998,27 @@ class TestWorkedExampleTab:
         tab_sets = _blocks_of_type(at.main, "tab_container")
         assert len(tab_sets) == 1
         assert tab_sets[0].proto.tab_container.default_tab_index == 0
+
+
+# =============================================================================
+# Step 3 fix: no horizontal-rule line in the Recommended actions callout
+# =============================================================================
+
+class TestActionsCallout:
+    """The narrative ends with "\n---", which the Recommended actions callout
+    used to show as a literal "---" line."""
+
+    def test_fix_no_rule_line_in_actions(self):
+        import re
+        at = _app_test()
+        at.button(key="see_worked_example").click().run()
+        assert not at.exception
+        callouts = [m.value for m in at.tabs[1].markdown
+                    if m.value.startswith('<div class="sc-narrative">')]
+        actions = [c for c in callouts if "RECOMMENDED ACTIONS" in c]
+        assert len(callouts) == 2 and len(actions) == 1
+        for callout in callouts:
+            body = callout[len('<div class="sc-narrative">'):-len("</div>")]
+            lines = [line.strip() for line in body.split("<br>")]
+            assert not any(re.fullmatch(r"([-*_])\1{2,}", line) for line in lines)
+        assert actions[0].endswith("misposted invoice.</div>")
