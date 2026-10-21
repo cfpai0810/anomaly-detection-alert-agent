@@ -143,7 +143,7 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               208 tests
+  test_pipeline.py               209 tests
 ```
 
 ---
@@ -220,7 +220,7 @@ record also carries `reviewed_by`, `reviewed_at`, and the disposition counts.
 
 ## Test suite
 
-208 tests. No real API calls. A full run takes about one to two minutes:
+209 tests. No real API calls. A full run takes about one to two minutes:
 
 ```bash
 pip install -r requirements-dev.txt
