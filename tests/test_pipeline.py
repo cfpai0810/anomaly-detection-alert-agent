@@ -2248,3 +2248,65 @@ class TestStep5Look:
         pages, config = _navigation()
         tool = next(p for p in pages if p.url_path == "close_scan")
         assert config["page_icon"] == tool.icon == ":material/search:"
+
+
+def _tab_place(at):
+    """Where the tab bar sits among the page's top-level blocks, and its id.
+    While both stay the same, the browser keeps the tab the reader chose."""
+    for index, child in at.main.children.items():
+        if getattr(child, "type", None) == "tab_container":
+            return index, child.proto.id
+    return None
+
+
+class TestStep5TabsAtTheTop:
+    """Everything a live run uses sits inside Run it yourself, so the tab bar
+    is directly under the banner and stays put through the controls and a run
+    (V5 points 3 and 4)."""
+
+    def test_v5_tab_bar_directly_under_the_banner(self):
+        at = _page("pages/close_scan.py")
+        kinds = [getattr(c, "type", None) for c in at.main.children.values()]
+        assert kinds[:4] == ["markdown", "markdown", "caption", "tab_container"]
+        example, live = at.tabs
+        assert [r.key for r in live.radio] == ["threshold_mode"]
+        assert [s.key for s in live.select_slider] == ["mat_level", "vol_level"]
+        columns = [list(d.value.columns) for d in live.dataframe]
+        assert ["Account", "Actual", "Prior month", "Budget", "Forecast"] in columns
+        assert any("vs Prior" in c for c in columns)
+        assert "#### AI triage" in [m.value for m in live.markdown]
+        # The example tab keeps its own content and no live control.
+        assert not example.radio and not example.select_slider
+        assert not example.dataframe
+
+    def test_v5_tab_stays_put_after_the_controls_and_a_run(self):
+        reply = _reply_from_capture(_sample_capture()["triage"])
+        with patch("anthropic.Anthropic",
+                   lambda api_key=None, **kw: _ReplyingClient(reply)):
+            at = _app_test()
+            at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+            at.switch_page("pages/close_scan.py").run()
+            place = _tab_place(at)
+            assert place[0] == 3 and place[1].endswith("-cs_triage_tabs")
+            at.select_slider(key="mat_level").set_value("High").run()
+            assert _tab_place(at) == place
+            at.select_slider(key="vol_level").set_value("Low").run()
+            assert _tab_place(at) == place
+            at.radio(key="threshold_mode").set_value("Custom thresholds").run()
+            assert _tab_place(at) == place
+            at.radio(key="threshold_mode").set_value("Sensitivity sliders").run()
+            at.select_slider(key="mat_level").set_value("Medium").run()
+            at.select_slider(key="vol_level").set_value("Medium").run()
+            assert _tab_place(at) == place
+            at.button(key="run_triage").click().run()
+        assert not at.exception
+        assert _tab_place(at) == place
+        assert _download_labels(at) == ["Download review PDF", "Download anomalies CSV"]
+
+    def test_v5_example_tab_names_where_the_controls_are(self):
+        at = _page("pages/close_scan.py")
+        at.select_slider(key="mat_level").set_value("High").run()
+        assert [i.value for i in at.tabs[0].info] == [
+            "The captured triage was produced at the default sensitivity. "
+            "Move the sliders in Run it yourself back to Medium to see it, or "
+            "enter an API key in the sidebar to run live triage."]

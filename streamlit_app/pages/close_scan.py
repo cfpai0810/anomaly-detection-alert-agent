@@ -85,298 +85,313 @@ history  = _load_history()
 
 
 # =============================================================================
-# THE CLOSE TABLE
+# THE TABS: the worked example first, then everything a live run uses
 # =============================================================================
 
-st.markdown("#### The close")
-st.caption(
-    "The month-end close: each account with its actual and three benchmarks. "
-    "This is the input the detection engine scans.")
-
-display_df = close_df[["account", "actual", "prior", "budget", "forecast"]].copy()
-for col in ["actual", "prior", "budget", "forecast"]:
-    display_df[col] = display_df[col].apply(format_money)
-display_df.columns = ["Account", "Actual", "Prior month", "Budget", "Forecast"]
-
-st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-st.caption("{} accounts, {} trailing months of history each.".format(
-    len(close_df), len(next(iter(history.values())))))
-
-st.markdown("---")
+# The worked example is the first tab, so every way onto this page (Home's
+# button, the sidebar, an address) opens on it. Everything a live run uses
+# (the close, the sensitivity controls, the scan results and the triage)
+# sits in Run it yourself, so the tab bar is directly under the banner and
+# nothing above it changes when those controls do. The fixed key keeps the
+# chosen tab when a rerun changes the page around it.
+tab_example, tab_live = st.tabs(
+    ["View a worked example", "Run it yourself"], key="cs_triage_tabs")
 
 
-# =============================================================================
-# DETECTION SENSITIVITY — sliders OR custom thresholds
-# =============================================================================
+with tab_live:
+    # =========================================================================
+    # THE CLOSE TABLE
+    # =========================================================================
 
-st.markdown("#### Detection sensitivity")
-
-threshold_mode = st.radio(
-    "Choose how to set detection thresholds",
-    ["Sensitivity sliders", "Custom thresholds"],
-    horizontal=True,
-    key="threshold_mode",
-    label_visibility="collapsed",
-)
-
-if threshold_mode == "Sensitivity sliders":
+    st.markdown("#### The close")
     st.caption(
-        "Higher sensitivity flags more accounts. Medium matches the default "
-        "thresholds used by the CLI tool.")
+        "The month-end close: each account with its actual and three benchmarks. "
+        "This is the input the detection engine scans.")
 
-    col_mat, col_vol = st.columns(2)
+    display_df = close_df[["account", "actual", "prior", "budget", "forecast"]].copy()
+    for col in ["actual", "prior", "budget", "forecast"]:
+        display_df[col] = display_df[col].apply(format_money)
+    display_df.columns = ["Account", "Actual", "Prior month", "Budget", "Forecast"]
 
-    with col_mat:
-        mat_level = st.select_slider(
-            "Materiality sensitivity",
-            options=LEVELS,
-            value=LEVELS[BASELINE_INDEX],
-            help="How large a variance must be to flag. Higher sensitivity "
-                 "means smaller thresholds, so smaller variances are caught.",
-            key="mat_level",
-        )
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    with col_vol:
-        vol_level = st.select_slider(
-            "Volatility sensitivity",
-            options=LEVELS,
-            value=LEVELS[BASELINE_INDEX],
-            help="How unusual a value must be relative to the account's own "
-                 "history. Higher sensitivity catches smaller swings.",
-            key="vol_level",
-        )
+    st.caption("{} accounts, {} trailing months of history each.".format(
+        len(close_df), len(next(iter(history.values())))))
 
-    eff_at, eff_gt, eff_zc, eff_nz = effective_thresholds(
-        mat_level, vol_level)
+    st.markdown("---")
 
-    _MAT_DESCRIPTIONS = {
-        "Very low": "only very large variances are flagged",
-        "Low": "only clearly significant variances are flagged",
-        "Medium": "flags variances that most finance teams would "
-                  "investigate",
-        "High": "catches smaller variances that might otherwise be "
-                "overlooked",
-        "Very high": "flags even minor variances for thorough review",
-    }
-    _VOL_DESCRIPTIONS = {
-        "Very low": "only extreme, unprecedented swings are flagged",
-        "Low": "only large, clearly unusual swings are flagged",
-        "Medium": "flags accounts that moved well outside their "
-                  "usual range",
-        "High": "catches moderate swings compared to recent history",
-        "Very high": "flags any noticeable departure from the usual "
-                     "pattern",
-    }
-    info_mat, info_vol = st.columns(2)
-    with info_mat:
-        st.caption("**{}:** {}.".format(
-            mat_level, _MAT_DESCRIPTIONS[mat_level]))
-    with info_vol:
-        st.caption("**{}:** {}.".format(
-            vol_level, _VOL_DESCRIPTIONS[vol_level]))
 
-    with st.expander("View effective thresholds"):
-        _thresh_rows = [{
-            "Account": "Global default",
-            "% band": "{:.1%}".format(eff_gt["pct_band"]),
-            "Min floor": "{}{:,.0f}".format(
-                CURRENCY_SYMBOL, eff_gt["min_dollar_floor"]),
-            "Big move": "{}{:,.0f}".format(
-                CURRENCY_SYMBOL, eff_gt["big_dollar"]),
-        }]
-        for _acct in sorted(eff_at.keys()):
-            _t = eff_at[_acct]
-            _thresh_rows.append({
-                "Account": _acct,
-                "% band": "{:.1%}".format(_t["pct_band"]),
-                "Min floor": "{}{:,.0f}".format(
-                    CURRENCY_SYMBOL, _t["min_dollar_floor"]),
-                "Big move": "{}{:,.0f}".format(
-                    CURRENCY_SYMBOL, _t["big_dollar"]),
-            })
-        st.dataframe(
-            pd.DataFrame(_thresh_rows),
-            use_container_width=True, hide_index=True)
-        st.caption(
-            "Near-zero floor: {}{:,.0f} (accounts below this base "
-            "are compared by amount only, not percentage).".format(
-                CURRENCY_SYMBOL, eff_nz))
-        st.caption(
-            "Want to set your own numbers? Switch to "
-            "**Custom thresholds** above.")
+    # =========================================================================
+    # DETECTION SENSITIVITY: sliders or custom thresholds
+    # =========================================================================
 
-else:
-    st.caption(
-        "Edit any cell to customise an account's thresholds. "
-        "The flagged table updates instantly.")
+    st.markdown("#### Detection sensitivity")
 
-    _all_accounts = list(close_df["account"].unique())
-    _floor_col = "Min floor ({})".format(CURRENCY_SYMBOL)
-    _big_col = "Big move ({})".format(CURRENCY_SYMBOL)
-    _thresh_data = []
-    for _acct in _all_accounts:
-        _base = ACCOUNT_THRESHOLDS.get(_acct, GLOBAL_THRESHOLD)
-        _thresh_data.append({
-            "Account": _acct,
-            "% band": _base["pct_band"] * 100,
-            _floor_col: float(_base["min_dollar_floor"]),
-            _big_col: float(_base["big_dollar"]),
-        })
-
-    _edited = st.data_editor(
-        pd.DataFrame(_thresh_data),
-        use_container_width=True,
-        hide_index=True,
-        disabled=["Account"],
-        column_config={
-            "% band": st.column_config.NumberColumn(
-                format="%.1f", min_value=0.1, step=1.0,
-                help="Percentage variance that triggers a flag"),
-            _floor_col: st.column_config.NumberColumn(
-                format="%.0f", min_value=0.0, step=1000.0,
-                help="Minimum currency amount for the percentage "
-                     "test to apply"),
-            _big_col: st.column_config.NumberColumn(
-                format="%.0f", min_value=0.0, step=5000.0,
-                help="Single-move amount that flags regardless "
-                     "of percentage"),
-        },
-        key="pa_table",
+    threshold_mode = st.radio(
+        "Choose how to set detection thresholds",
+        ["Sensitivity sliders", "Custom thresholds"],
+        horizontal=True,
+        key="threshold_mode",
+        label_visibility="collapsed",
     )
 
-    eff_gt = GLOBAL_THRESHOLD.copy()
-    eff_at = {}
-    for _, _row in _edited.iterrows():
-        eff_at[_row["Account"]] = {
-            "pct_band": _row["% band"] / 100,
-            "min_dollar_floor": _row[_floor_col],
-            "big_dollar": _row[_big_col],
+    if threshold_mode == "Sensitivity sliders":
+        st.caption(
+            "Higher sensitivity flags more accounts. Medium matches the default "
+            "thresholds used by the CLI tool.")
+
+        col_mat, col_vol = st.columns(2)
+
+        with col_mat:
+            mat_level = st.select_slider(
+                "Materiality sensitivity",
+                options=LEVELS,
+                value=LEVELS[BASELINE_INDEX],
+                help="How large a variance must be to flag. Higher sensitivity "
+                     "means smaller thresholds, so smaller variances are caught.",
+                key="mat_level",
+            )
+
+        with col_vol:
+            vol_level = st.select_slider(
+                "Volatility sensitivity",
+                options=LEVELS,
+                value=LEVELS[BASELINE_INDEX],
+                help="How unusual a value must be relative to the account's own "
+                     "history. Higher sensitivity catches smaller swings.",
+                key="vol_level",
+            )
+
+        eff_at, eff_gt, eff_zc, eff_nz = effective_thresholds(
+            mat_level, vol_level)
+
+        _MAT_DESCRIPTIONS = {
+            "Very low": "only very large variances are flagged",
+            "Low": "only clearly significant variances are flagged",
+            "Medium": "flags variances that most finance teams would "
+                      "investigate",
+            "High": "catches smaller variances that might otherwise be "
+                    "overlooked",
+            "Very high": "flags even minor variances for thorough review",
         }
+        _VOL_DESCRIPTIONS = {
+            "Very low": "only extreme, unprecedented swings are flagged",
+            "Low": "only large, clearly unusual swings are flagged",
+            "Medium": "flags accounts that moved well outside their "
+                      "usual range",
+            "High": "catches moderate swings compared to recent history",
+            "Very high": "flags any noticeable departure from the usual "
+                         "pattern",
+        }
+        info_mat, info_vol = st.columns(2)
+        with info_mat:
+            st.caption("**{}:** {}.".format(
+                mat_level, _MAT_DESCRIPTIONS[mat_level]))
+        with info_vol:
+            st.caption("**{}:** {}.".format(
+                vol_level, _VOL_DESCRIPTIONS[vol_level]))
 
-    zc1, zc2 = st.columns(2)
-    eff_zc = zc1.number_input(
-        "Volatility cutoff",
-        value=MODIFIED_Z_CUTOFF, format="%.1f",
-        step=0.5, min_value=0.5, key="pa_zc",
-        help="How far a value must deviate from the account's usual "
-             "range to be flagged. Lower values catch smaller swings.")
-    eff_nz = zc2.number_input(
-        "Near-zero floor ({})".format(CURRENCY_SYMBOL),
-        value=float(NEAR_ZERO), format="%.0f",
-        step=100.0, min_value=0.0, key="pa_nz",
-        help="Accounts with a base below this amount are compared "
-             "by currency amount only, not percentage.")
+        with st.expander("View effective thresholds"):
+            _thresh_rows = [{
+                "Account": "Global default",
+                "% band": "{:.1%}".format(eff_gt["pct_band"]),
+                "Min floor": "{}{:,.0f}".format(
+                    CURRENCY_SYMBOL, eff_gt["min_dollar_floor"]),
+                "Big move": "{}{:,.0f}".format(
+                    CURRENCY_SYMBOL, eff_gt["big_dollar"]),
+            }]
+            for _acct in sorted(eff_at.keys()):
+                _t = eff_at[_acct]
+                _thresh_rows.append({
+                    "Account": _acct,
+                    "% band": "{:.1%}".format(_t["pct_band"]),
+                    "Min floor": "{}{:,.0f}".format(
+                        CURRENCY_SYMBOL, _t["min_dollar_floor"]),
+                    "Big move": "{}{:,.0f}".format(
+                        CURRENCY_SYMBOL, _t["big_dollar"]),
+                })
+            st.dataframe(
+                pd.DataFrame(_thresh_rows),
+                use_container_width=True, hide_index=True)
+            st.caption(
+                "Near-zero floor: {}{:,.0f} (accounts below this base "
+                "are compared by amount only, not percentage).".format(
+                    CURRENCY_SYMBOL, eff_nz))
+            st.caption(
+                "Want to set your own numbers? Switch to "
+                "**Custom thresholds** above.")
 
-
-# =============================================================================
-# LIVE DETECTION
-# =============================================================================
-
-flagged, flags = detect_anomalies(
-    close_df, history,
-    account_thresholds=eff_at,
-    global_threshold=eff_gt,
-    z_cutoff=eff_zc,
-    near_zero=eff_nz,
-)
-
-flagged_names = {f["account"] for f in flagged}
-flagged_lookup = {f["account"]: f for f in flagged}
-
-
-# =============================================================================
-# FLAGGED TABLE: all eight accounts, flagged ones highlighted
-# =============================================================================
-
-st.markdown("#### Scan results")
-
-n_flagged = len(flagged)
-st.markdown("**{} of {} accounts flagged.**".format(n_flagged, len(close_df)))
-
-# Build the full result for every account (flagged or not).
-result_rows = []
-for _, row in close_df.iterrows():
-    account = row["account"]
-    actual  = row["actual"]
-    is_flag = account in flagged_names
-    f       = flagged_lookup.get(account)
-
-    bench_parts = []
-    for bench in BENCHMARKS:
-        if f:
-            c = f["comparisons"][bench]
-            dollar = c["dollar"]
-            pct    = c["pct"]
-        else:
-            dollar = actual - row[bench]
-            pct    = (dollar / row[bench]) if abs(row[bench]) >= eff_nz else None
-
-        pct_str = "{:+.1%}".format(pct) if pct is not None else "n/a"
-        bench_parts.append("{} ({})".format(format_money(dollar, signed=True), pct_str))
-
-    if f:
-        vol_label = f["volatility"]
-        reasons = []
-        if f["material_benchmarks"]:
-            reasons.append("material vs " + ", ".join(f["material_benchmarks"]))
-        if f["stable_moved"]:
-            reasons.append("stable account moved")
-        reason_str = "; ".join(reasons)
     else:
-        vol_label  = ""
-        reason_str = ""
+        st.caption(
+            "Edit any cell to customise an account's thresholds. "
+            "The flagged table updates instantly.")
 
-    result_rows.append({
-        "Account":    account,
-        "Actual":     format_money(actual),
-        "vs Prior":   bench_parts[0],
-        "vs Budget":  bench_parts[1],
-        "vs Forecast": bench_parts[2],
-        "Volatility": vol_label.replace("_", " ").capitalize(),
-        "Reason":     reason_str,
-        "_flagged":   is_flag,
-        "_stable_moved": f["stable_moved"] if f else False,
-    })
+        _all_accounts = list(close_df["account"].unique())
+        _floor_col = "Min floor ({})".format(CURRENCY_SYMBOL)
+        _big_col = "Big move ({})".format(CURRENCY_SYMBOL)
+        _thresh_data = []
+        for _acct in _all_accounts:
+            _base = ACCOUNT_THRESHOLDS.get(_acct, GLOBAL_THRESHOLD)
+            _thresh_data.append({
+                "Account": _acct,
+                "% band": _base["pct_band"] * 100,
+                _floor_col: float(_base["min_dollar_floor"]),
+                _big_col: float(_base["big_dollar"]),
+            })
 
-result_df = pd.DataFrame(result_rows)
+        _edited = st.data_editor(
+            pd.DataFrame(_thresh_data),
+            use_container_width=True,
+            hide_index=True,
+            disabled=["Account"],
+            column_config={
+                "% band": st.column_config.NumberColumn(
+                    format="%.1f", min_value=0.1, step=1.0,
+                    help="Percentage variance that triggers a flag"),
+                _floor_col: st.column_config.NumberColumn(
+                    format="%.0f", min_value=0.0, step=1000.0,
+                    help="Minimum currency amount for the percentage "
+                         "test to apply"),
+                _big_col: st.column_config.NumberColumn(
+                    format="%.0f", min_value=0.0, step=5000.0,
+                    help="Single-move amount that flags regardless "
+                         "of percentage"),
+            },
+            key="pa_table",
+        )
+
+        eff_gt = GLOBAL_THRESHOLD.copy()
+        eff_at = {}
+        for _, _row in _edited.iterrows():
+            eff_at[_row["Account"]] = {
+                "pct_band": _row["% band"] / 100,
+                "min_dollar_floor": _row[_floor_col],
+                "big_dollar": _row[_big_col],
+            }
+
+        zc1, zc2 = st.columns(2)
+        eff_zc = zc1.number_input(
+            "Volatility cutoff",
+            value=MODIFIED_Z_CUTOFF, format="%.1f",
+            step=0.5, min_value=0.5, key="pa_zc",
+            help="How far a value must deviate from the account's usual "
+                 "range to be flagged. Lower values catch smaller swings.")
+        eff_nz = zc2.number_input(
+            "Near-zero floor ({})".format(CURRENCY_SYMBOL),
+            value=float(NEAR_ZERO), format="%.0f",
+            step=100.0, min_value=0.0, key="pa_nz",
+            help="Accounts with a base below this amount are compared "
+                 "by currency amount only, not percentage.")
 
 
-def _highlight_flagged(row):
-    """Row-level styling: light red for flagged, default for unflagged."""
-    if row["_flagged"]:
-        return ["background-color: #FFF0F0"] * len(row)
-    return [""] * len(row)
+    # =========================================================================
+    # LIVE DETECTION
+    # =========================================================================
+
+    flagged, flags = detect_anomalies(
+        close_df, history,
+        account_thresholds=eff_at,
+        global_threshold=eff_gt,
+        z_cutoff=eff_zc,
+        near_zero=eff_nz,
+    )
+
+    flagged_names = {f["account"] for f in flagged}
+    flagged_lookup = {f["account"]: f for f in flagged}
 
 
-show_cols = ["Account", "Actual", "vs Prior", "vs Budget", "vs Forecast",
-             "Volatility", "Reason"]
-styled = (result_df[show_cols + ["_flagged"]]
-          .style
-          .apply(_highlight_flagged, axis=1)
-          .set_properties(subset=["Account"], **{"font-weight": "bold"}))
+    # =========================================================================
+    # FLAGGED TABLE: all eight accounts, flagged ones highlighted
+    # =========================================================================
 
-# Hide the internal _flagged column from display.
-styled = styled.hide(subset=["_flagged"], axis="columns")
+    st.markdown("#### Scan results")
 
-st.dataframe(
-    styled,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Volatility": st.column_config.TextColumn(width="medium"),
-        "Reason":     st.column_config.TextColumn(width="large"),
-    },
-)
+    n_flagged = len(flagged)
+    st.markdown("**{} of {} accounts flagged.**".format(n_flagged, len(close_df)))
 
-# Honest caption for stable-moved accounts.
-has_stable = any(r["_stable_moved"] for r in result_rows)
-if has_stable:
-    st.caption(
-        "Accounts marked \"stable account moved\" have a flat history "
-        "(every month identical) and their current value differs. This is a "
-        "property of the data, not controlled by either slider. A fixed line "
-        "that moves is always worth a look.")
+    # Build the full result for every account (flagged or not).
+    result_rows = []
+    for _, row in close_df.iterrows():
+        account = row["account"]
+        actual  = row["actual"]
+        is_flag = account in flagged_names
+        f       = flagged_lookup.get(account)
+
+        bench_parts = []
+        for bench in BENCHMARKS:
+            if f:
+                c = f["comparisons"][bench]
+                dollar = c["dollar"]
+                pct    = c["pct"]
+            else:
+                dollar = actual - row[bench]
+                pct    = (dollar / row[bench]) if abs(row[bench]) >= eff_nz else None
+
+            pct_str = "{:+.1%}".format(pct) if pct is not None else "n/a"
+            bench_parts.append("{} ({})".format(format_money(dollar, signed=True), pct_str))
+
+        if f:
+            vol_label = f["volatility"]
+            reasons = []
+            if f["material_benchmarks"]:
+                reasons.append("material vs " + ", ".join(f["material_benchmarks"]))
+            if f["stable_moved"]:
+                reasons.append("stable account moved")
+            reason_str = "; ".join(reasons)
+        else:
+            vol_label  = ""
+            reason_str = ""
+
+        result_rows.append({
+            "Account":    account,
+            "Actual":     format_money(actual),
+            "vs Prior":   bench_parts[0],
+            "vs Budget":  bench_parts[1],
+            "vs Forecast": bench_parts[2],
+            "Volatility": vol_label.replace("_", " ").capitalize(),
+            "Reason":     reason_str,
+            "_flagged":   is_flag,
+            "_stable_moved": f["stable_moved"] if f else False,
+        })
+
+    result_df = pd.DataFrame(result_rows)
+
+
+    def _highlight_flagged(row):
+        """Row-level styling: light red for flagged, default for unflagged."""
+        if row["_flagged"]:
+            return ["background-color: #FFF0F0"] * len(row)
+        return [""] * len(row)
+
+
+    show_cols = ["Account", "Actual", "vs Prior", "vs Budget", "vs Forecast",
+                 "Volatility", "Reason"]
+    styled = (result_df[show_cols + ["_flagged"]]
+              .style
+              .apply(_highlight_flagged, axis=1)
+              .set_properties(subset=["Account"], **{"font-weight": "bold"}))
+
+    # Hide the internal _flagged column from display.
+    styled = styled.hide(subset=["_flagged"], axis="columns")
+
+    st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Volatility": st.column_config.TextColumn(width="medium"),
+            "Reason":     st.column_config.TextColumn(width="large"),
+        },
+    )
+
+    # Honest caption for stable-moved accounts.
+    has_stable = any(r["_stable_moved"] for r in result_rows)
+    if has_stable:
+        st.caption(
+            "Accounts marked \"stable account moved\" have a flat history "
+            "(every month identical) and their current value differs. This is a "
+            "property of the data, not controlled by either slider. A fixed line "
+            "that moves is always worth a look.")
 
 
 # =============================================================================
@@ -484,34 +499,28 @@ def _load_example():
 example = _load_example()
 
 
-st.markdown("---")
-
-# =============================================================================
-# AI TRIAGE — tabs separate the live path from the worked example
-# =============================================================================
-
-st.markdown("#### AI triage")
-st.caption(
-    "Run the AI agent to triage the flagged accounts: rank by priority, "
-    "judge timing versus permanent, and hypothesise a likely cause. "
-    "One model call per click.")
-
-fingerprint = triage_fingerprint(flagged)
-
-# Stale check: clear saved triage if thresholds changed since it ran.
-_stale_cleared = False
-if "triage_state" in st.session_state:
-    if st.session_state["triage_state"]["fingerprint"] != fingerprint:
-        del st.session_state["triage_state"]
-        _stale_cleared = True
-
-# The worked example is the first tab, so every way onto this page (Home's
-# button, the sidebar, an address) opens on it. The fixed key keeps the chosen
-# tab when a rerun changes the page around it.
-tab_example, tab_live = st.tabs(
-    ["View a worked example", "Run it yourself"], key="cs_triage_tabs")
-
 with tab_live:
+    st.markdown("---")
+
+    # =========================================================================
+    # AI TRIAGE: the live path (the worked example has its own tab)
+    # =========================================================================
+
+    st.markdown("#### AI triage")
+    st.caption(
+        "Run the AI agent to triage the flagged accounts: rank by priority, "
+        "judge timing versus permanent, and hypothesise a likely cause. "
+        "One model call per click.")
+
+    fingerprint = triage_fingerprint(flagged)
+
+    # Stale check: clear saved triage if thresholds changed since it ran.
+    _stale_cleared = False
+    if "triage_state" in st.session_state:
+        if st.session_state["triage_state"]["fingerprint"] != fingerprint:
+            del st.session_state["triage_state"]
+            _stale_cleared = True
+
     if _stale_cleared:
         st.info(
             "The flagged set changed. Run AI triage again to interpret "
@@ -646,10 +655,12 @@ with tab_example:
             "No accounts flagged at the current thresholds. "
             "Nothing to triage.")
     else:
+        # The controls are in the other tab, so the hint names it.
         if threshold_mode == "Sensitivity sliders":
-            restore_hint = "Move the sliders back to Medium"
+            restore_hint = "Move the sliders in Run it yourself back to Medium"
         else:
-            restore_hint = "Restore the default custom threshold values"
+            restore_hint = ("Restore the default custom threshold values in "
+                            "Run it yourself")
         st.info(
             "The captured triage was produced at the default sensitivity. "
             "{} to see it, or enter an API "
