@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import (
-    inject_css, priority_badge_html,
+    inject_css, header_html, priority_badge_html,
     MUTED, FLAG_RED, AMBER, GREEN,
 )
 from streamlit_app.lib.key_gate import render_key_gate
@@ -56,14 +56,12 @@ from config import (
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 # -- Header -------------------------------------------------------------------
-st.markdown(
-    '<div class="sc-header">'
-    '<h1>Close Anomaly Scan</h1>'
-    '<p>Scan the month-end close for statistical anomalies, adjust the '
-    'detection sensitivity, and triage flagged accounts with the AI agent.</p>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+st.markdown(header_html(
+    "Close scan",
+    "Scan the month-end close for statistical anomalies, adjust the "
+    "detection sensitivity, and triage flagged accounts with the AI agent."),
+    unsafe_allow_html=True)
+st.caption("{}, Close {}".format(DEFAULT_ENTITY, CLOSE_PERIOD))
 
 # -- Key gate (sidebar) ------------------------------------------------------
 client = render_key_gate()
@@ -90,7 +88,7 @@ history  = _load_history()
 # THE CLOSE TABLE
 # =============================================================================
 
-st.markdown("#### {} -- Close {}".format(DEFAULT_ENTITY, CLOSE_PERIOD))
+st.markdown("#### The close")
 st.caption(
     "The month-end close: each account with its actual and three benchmarks. "
     "This is the input the detection engine scans.")
@@ -507,12 +505,11 @@ if "triage_state" in st.session_state:
         del st.session_state["triage_state"]
         _stale_cleared = True
 
-# Home's "See the worked example" button opens this page on the example tab.
-_open_example = st.session_state.pop("cs_open_example", False)
-tab_live, tab_example = st.tabs(
-    ["Run it yourself", "View a worked example"],
-    default="View a worked example" if _open_example else None,
-    key="cs_triage_tabs")
+# The worked example is the first tab, so every way onto this page (Home's
+# button, the sidebar, an address) opens on it. The fixed key keeps the chosen
+# tab when a rerun changes the page around it.
+tab_example, tab_live = st.tabs(
+    ["View a worked example", "Run it yourself"], key="cs_triage_tabs")
 
 with tab_live:
     if _stale_cleared:

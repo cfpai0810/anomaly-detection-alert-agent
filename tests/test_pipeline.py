@@ -1932,9 +1932,9 @@ class TestWorkedExampleButton:
         assert [b.label for b in at.button] == ["See the worked example"]
         at.button(key="see_worked_example").click().run()
         assert not at.exception
-        assert any("<h1>Close Anomaly Scan</h1>" in m.value for m in at.markdown)
-        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
-        example_tab = at.tabs[1]
+        assert any("<h1>Close scan</h1>" in m.value for m in at.markdown)
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
+        example_tab = at.tabs[0]
         assert any(c.value.startswith("This is a captured model output")
                    for c in example_tab.caption)
         assert at.session_state["live_client"] is None
@@ -1974,22 +1974,22 @@ def _blocks_of_type(node, block_type):
 
 
 class TestWorkedExampleTab:
-    """Home's button opens Close Scan on its "View a worked example" tab; the
-    sidebar link still opens the first tab (UX2)."""
+    """Home's button opens Close scan on its "View a worked example" tab, and
+    so does the sidebar link: since Step 5a it is the first tab (UX2, V5)."""
 
     def test_ux2_button_opens_the_example_tab(self):
         at = _app_test()
         at.button(key="see_worked_example").click().run()
         assert not at.exception
-        assert any("<h1>Close Anomaly Scan</h1>" in m.value for m in at.markdown)
+        assert any("<h1>Close scan</h1>" in m.value for m in at.markdown)
         tab_sets = _blocks_of_type(at.main, "tab_container")
         assert len(tab_sets) == 1
-        assert [t.label for t in at.tabs] == ["Run it yourself", "View a worked example"]
-        assert tab_sets[0].proto.tab_container.default_tab_index == 1
-        # A fixed key keeps the chosen tab when a rerun changes the layout
-        # above the tabs (the threshold mode radio).
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        # A fixed key keeps the chosen tab when a rerun changes the page
+        # around the tabs.
         assert tab_sets[0].proto.id.endswith("-cs_triage_tabs")
-        # The flag is used once: the next run of the page has no default.
+        # The button only switches page: it sets no one-off flag.
         assert "cs_open_example" not in at.session_state
         assert at.session_state["live_client"] is None
 
@@ -2015,7 +2015,7 @@ class TestActionsCallout:
         at = _app_test()
         at.button(key="see_worked_example").click().run()
         assert not at.exception
-        callouts = [m.value for m in at.tabs[1].markdown
+        callouts = [m.value for m in at.tabs[0].markdown
                     if m.value.startswith('<div class="sc-narrative">')]
         actions = [c for c in callouts if "RECOMMENDED ACTIONS" in c]
         assert len(callouts) == 2 and len(actions) == 1
@@ -2070,3 +2070,181 @@ class TestDependencies:
         text = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(
             encoding="utf-8-sig")
         assert "certifi==2026.10.19" in text.split()
+
+
+# =============================================================================
+# Step 5a: Project 6's structure in the series navy (V1 to V5, page icon)
+# =============================================================================
+
+import html
+import tomllib
+
+from streamlit_app.lib import theme
+from streamlit_app.lib.theme import DARK_BLUE, status_chip_html
+
+# Each page as AppTest opens it (None is Home), with the name its banner shows
+BANNERS = {
+    None: "Anomaly Detection and Alert Agent",
+    "pages/how_it_works.py": "How it works",
+    "pages/close_scan.py": "Close scan",
+    "pages/your_own_data.py": "Your own data",
+    "pages/how_its_built.py": "How it's built",
+}
+
+
+def _page(path=None):
+    """One page of the app, opened from Home with no key."""
+    at = _app_test()
+    if path:
+        at.switch_page(path).run()
+    assert not at.exception
+    return at
+
+
+def _navigation():
+    """The pages, and the page_icon, exactly as Home hands them to Streamlit."""
+    import streamlit as st
+    pages, config = [], {}
+    real_nav, real_config = st.navigation, st.set_page_config
+
+    def spy_nav(entries, **kwargs):
+        pages[:] = list(entries)
+        return real_nav(entries, **kwargs)
+
+    def spy_config(*args, **kwargs):
+        config.update(kwargs)
+        return real_config(*args, **kwargs)
+
+    with patch("streamlit.navigation", spy_nav), \
+            patch("streamlit.set_page_config", spy_config):
+        at = _app_test()
+    assert not at.exception
+    return pages, config
+
+
+class TestStep5Look:
+    """The look and layout of Project 6, with P3's navy kept: the theme, one
+    banner pattern, the Home blocks, sentence-case names with unchanged
+    addresses, and the worked example first (V1 to V5)."""
+
+    def test_v1_primary_colour_is_the_navy(self):
+        root = Path(__file__).resolve().parent.parent
+        config = tomllib.loads(
+            (root / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+        assert config["theme"]["primaryColor"] == DARK_BLUE == "#1A3A5C"
+        assert config["client"]["toolbarMode"] == "minimal"
+
+    @pytest.mark.parametrize("path,title", list(BANNERS.items()))
+    def test_v2_every_page_has_a_banner(self, path, title):
+        at = _page(path)
+        banners = [m.value for m in at.main.markdown
+                   if m.value.startswith('<div class="sc-header">')]
+        assert len(banners) == 1
+        assert "<h1>{}</h1>".format(html.escape(title)) in banners[0]
+        # The banner is the page's only title: no second title line under it.
+        assert not [m.value for m in at.main.markdown if m.value.startswith("#")
+                    and m.value.lstrip("#").strip().startswith(title)]
+
+    def test_v2_close_scan_title_line_is_a_caption(self):
+        at = _page("pages/close_scan.py")
+        assert at.main.caption[0].value == "Valencia Operations, Close 2026-06"
+        assert not [m.value for m in at.markdown if "Valencia Operations" in m.value
+                    and m.value.startswith("#")]
+
+    def test_v2_draft_and_final_chips(self):
+        assert theme.DRAFT_CHIP == "#B45F06" and theme.FINAL_CHIP == "#2E6B3F"
+        assert status_chip_html("draft") == '<span class="sc-status draft">DRAFT</span>'
+        assert status_chip_html("final") == '<span class="sc-status final">FINAL</span>'
+        assert status_chip_html("FINAL") == '<span class="sc-status draft">DRAFT</span>'
+        assert status_chip_html(None) == '<span class="sc-status draft">DRAFT</span>'
+        css = inject_css()
+        assert ".sc-status.draft { background: #B45F06; }" in css
+        assert ".sc-status.final { background: #2E6B3F; }" in css
+        # The blue draft badge is gone; the priority badges stay.
+        assert not hasattr(theme, "badge_html") and not hasattr(theme, "BADGE")
+
+    def test_v3_home_blocks_and_page_links(self):
+        at = _page()
+        assert [b.label for b in at.button] == ["See the worked example"]
+        headings = [m.value for m in at.main.markdown if m.value.startswith("#")]
+        assert headings == ["#### What it does", "#### The governance promise",
+                            "#### Pages"]
+        promise = next(m.value for m in at.main.markdown
+                       if m.value.startswith("- **Python detects.**"))
+        assert [line.split("**")[1] for line in promise.splitlines()] == [
+            "Python detects.", "A rule flags.", "The model triages.",
+            "A person reviews."]
+        links = at.get("page_link")
+        assert [link.proto.page for link in links] == [
+            "how_it_works", "close_scan", "your_own_data", "how_its_built"]
+        assert [link.proto.label.split(": ")[0] for link in links] == [
+            "How it works", "Close scan", "Your own data", "How it's built"]
+        assert [link.proto.icon for link in links] == [
+            ":material/menu_book:", ":material/search:",
+            ":material/upload_file:", ":material/build:"]
+        # The links wrap rather than clip, as in Project 6.
+        css = inject_css()
+        rule = css[css.index("/* Page links wrap rather than clip on a phone */"):]
+        assert 'white-space: normal !important' in rule[:rule.index("}")]
+        # The key explainer stays, closed, with its cost figures.
+        explainer = at.main.expander
+        assert [e.label for e in explainer] == ["Using your own API key"]
+        assert explainer[0].proto.expanded is False
+        assert any("1.8 US cents" in m.value and "1,191 input and 930 output" in m.value
+                   for m in explainer[0].markdown)
+        assert at.main.caption[-1].value == (
+            "Sample data only: Valencia Operations is a fictional company. "
+            "All figures are illustrative.")
+        # No green "loaded" box; the warning only when a file is missing.
+        assert not at.success and not at.warning
+
+    def test_v3_home_warns_only_when_a_data_file_is_missing(self):
+        real_exists = Path.exists
+
+        def exists(self, *args, **kwargs):
+            if self.name == "account_history.csv":
+                return False
+            return real_exists(self, *args, **kwargs)
+
+        with patch.object(Path, "exists", exists):
+            at = _app_test()
+        assert [w.value for w in at.warning] == [
+            "The sample data is incomplete. Missing: account_history.csv. The "
+            "tool page needs these files in the project's data folder."]
+
+    def test_v4_titles_are_sentence_case_and_urls_unchanged(self):
+        pages, _ = _navigation()
+        # Every page address before Step 5a (main at 06b2f31), as Streamlit
+        # assigned them: the titles change, the addresses must not.
+        assert [p.url_path for p in pages] == [
+            "", "how_it_works", "close_scan", "your_own_data", "how_its_built"]
+        assert {p.url_path: p.title for p in pages} == {
+            "": "Home",
+            "how_it_works": "How it works",
+            "close_scan": "Close scan",
+            "your_own_data": "Your own data",
+            "how_its_built": "How it's built",
+        }
+        for page in pages:
+            assert page.title[1:] == page.title[1:].lower()
+
+    def test_v5_example_tab_first_and_no_open_example_flag(self):
+        at = _page("pages/close_scan.py")
+        assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
+        tab_sets = _blocks_of_type(at.main, "tab_container")
+        assert len(tab_sets) == 1
+        assert tab_sets[0].proto.tab_container.default_tab_index == 0
+        assert tab_sets[0].proto.id.endswith("-cs_triage_tabs")
+        assert any(c.value.startswith("This is a captured model output")
+                   for c in at.tabs[0].caption)
+        app = APP_HOME.parent
+        for source in app.rglob("*.py"):
+            assert "_open_example" not in source.read_text(encoding="utf-8"), source
+        page = (app / "pages" / "close_scan.py").read_text(encoding="utf-8")
+        call = page[page.index("st.tabs("):]
+        assert "default=" not in call[:call.index(")")]
+
+    def test_v5_page_icon_is_the_tool_page_icon(self):
+        pages, config = _navigation()
+        tool = next(p for p in pages if p.url_path == "close_scan")
+        assert config["page_icon"] == tool.icon == ":material/search:"

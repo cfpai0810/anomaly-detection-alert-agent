@@ -23,14 +23,10 @@ MUTED      = "#898781"
 RULE       = "#D3D1C7"
 NEAR_WHITE = "#FBFAF7"
 
-# Status badge colours (background, text) — the governance state made visible
-BADGE = {
-    "draft":    (LIGHT_BLUE, DARK_BLUE),
-    "approved": ("#E1F5EE",  GREEN),
-    "locked":   ("#E6F1FB",  MID_BLUE),
-    "refused":  ("#F7E4E4",  FLAG_RED),
-    "caution":  (AMBER_BG,   AMBER),
-}
+# Status chips: amber DRAFT and green FINAL, the series' sign-off colours (as
+# Project 6's screen and PDF use them)
+DRAFT_CHIP = "#B45F06"
+FINAL_CHIP = "#2E6B3F"
 
 # Priority badge colours — matches the PDF review pack
 PRIORITY_BADGE = {
@@ -89,6 +85,24 @@ def inject_css():
       .sc-header p  {{
         font-family: {SANS};
         color: #AACCEE; margin: 6px 0 0; font-size: 0.92rem; font-weight: 400;
+      }}
+
+      /* Status chip: amber DRAFT, green FINAL */
+      .sc-status {{
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: white;
+      }}
+      .sc-status.draft {{ background: {DRAFT_CHIP}; }}
+      .sc-status.final {{ background: {FINAL_CHIP}; }}
+
+      /* Page links wrap rather than clip on a phone */
+      [data-testid="stPageLink-NavLink"], [data-testid="stPageLink-NavLink"] * {{
+        white-space: normal !important; height: auto !important;
       }}
 
       /* Status badge */
@@ -166,15 +180,6 @@ def inject_css():
     """
 
 
-def badge_html(status):
-    """Return an HTML status badge for one of the governance states."""
-    status = status.lower()
-    bg, fg = BADGE.get(status, BADGE["draft"])
-    label = status.upper()
-    return (f'<span class="sc-badge" style="background:{bg};color:{fg};">'
-            f'{label}</span>')
-
-
 _VALID_PRIORITIES = frozenset({"HIGH", "MEDIUM", "LOW"})
 
 
@@ -192,3 +197,16 @@ def priority_badge_html(priority):
     bg, fg = PRIORITY_BADGE[label]
     return (f'<span class="sc-badge" style="background:{bg};color:{fg};">'
             f'{label}</span>')
+
+
+def header_html(title, subtitle):
+    """The page banner: the series navy band with the page's name and one line."""
+    import html
+    return (f'<div class="sc-header"><h1>{html.escape(title)}</h1>'
+            f'<p>{html.escape(subtitle)}</p></div>')
+
+
+def status_chip_html(status):
+    """The DRAFT or FINAL chip. Anything but "final" reads DRAFT."""
+    label = "FINAL" if status == "final" else "DRAFT"
+    return f'<span class="sc-status {label.lower()}">{label}</span>'

@@ -11,16 +11,17 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css
+from streamlit_app.lib.theme import inject_css, header_html
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
 
 # -- Title --------------------------------------------------------------------
-st.markdown("### How it works")
-st.write(
+st.markdown(header_html(
+    "How it works",
     "A plain-language guide to what the tool does, how it decides what to "
-    "flag, and what its output means for you as a reviewer.")
+    "flag, and what its output means for you as a reviewer."),
+    unsafe_allow_html=True)
 
 st.markdown("---")
 

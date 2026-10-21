@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from streamlit_app.lib.theme import inject_css, DARK_BLUE
+from streamlit_app.lib.theme import inject_css, header_html
 from streamlit_app.lib.key_gate import render_key_gate
 
 
@@ -25,88 +25,59 @@ def _home_page():
     st.markdown(inject_css(), unsafe_allow_html=True)
 
     # -- Header ---------------------------------------------------------------
-    st.markdown(
-        '<div class="sc-header">'
-        '<h1>Anomaly Detection and Alert Agent</h1>'
-        '<p>A month-end close anomaly scanner and triage aid for a finance '
-        'controller. It scans one entity\'s close for unusual accounts and '
-        'helps the controller focus review time on what matters.</p>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(header_html(
+        "Anomaly Detection and Alert Agent",
+        "A month-end close anomaly scanner and triage aid for a finance "
+        "controller."),
+        unsafe_allow_html=True)
 
     # -- One step to the worked example, which needs no key -------------------
+    # The button only switches page: Close scan opens on its first tab, the
+    # worked example.
     if st.button("See the worked example", key="see_worked_example"):
-        st.session_state[OPEN_EXAMPLE_TAB] = True
         st.switch_page(CLOSE_SCAN_PAGE)
 
     # -- The key gate (sidebar): returns a per-session client or None ---------
     client = render_key_gate()
     st.session_state["live_client"] = client
 
-    # -- What this does -------------------------------------------------------
-    st.markdown("#### What this does")
-    st.write(
-        "The tool works in two stages. First, it flags unusual accounts "
-        "with transparent, deterministic rules you control: a materiality "
-        "test against three benchmarks (prior month, budget, forecast) and "
-        "a statistical volatility test against the account's own history. "
-        "Then, on request, an AI layer interprets each flag: is the "
-        "movement timing or permanent, which benchmark tells the real "
-        "story, and what might have caused it.")
-    st.write(
-        "The scan runs without an API key. The sensitivity sliders, the "
-        "flagged table, and a worked example with real model output are "
-        "all free to explore. Only the live AI triage needs an Anthropic "
-        "API key.")
+    # -- What it does ---------------------------------------------------------
+    st.markdown("#### What it does")
+    st.markdown(
+        "- Reads a month-end close: eight accounts, each with actual, prior "
+        "month, budget, forecast and twelve months of history.\n"
+        "- Flags unusual accounts by rule, with sensitivity sliders you "
+        "control.\n"
+        "- On request, the model triages each flag: timing or permanent, "
+        "which benchmark matters, what might have caused it.\n"
+        "- After a live triage, produces a review PDF and an anomalies CSV "
+        "for the controller.")
 
-    st.markdown("---")
+    # -- The governance promise -----------------------------------------------
+    st.markdown("#### The governance promise")
+    st.markdown(
+        "- **Python detects.** Flags come from a materiality test against "
+        "three benchmarks and a volatility test, calculated in code.\n"
+        "- **A rule flags.** The thresholds are yours, not the model's.\n"
+        "- **The model triages.** It interprets flags it was given and "
+        "cannot change them.\n"
+        "- **A person reviews.** This version has no sign-off step on the web, so "
+        "nothing here is signed or final.")
 
     # -- Pages ----------------------------------------------------------------
     st.markdown("#### Pages")
-    st.write(
-        "**How it works** explains the tool in plain terms: the two-stage "
-        "model, what flags an account, what the sliders do, and what the "
-        "output means for a reviewer.")
-    st.write(
-        "**Close anomaly scan** is the tool itself. It loads the sample "
-        "close, lets you adjust the detection sensitivity, flags the "
-        "anomalies, and triages them. A worked example runs at the "
-        "default sensitivity with no API key.")
-    st.write(
-        "**How it's built** is the technical and governance story: the "
-        "Python-detects, model-triages boundary, the pipeline, "
-        "determinism and lineage, and the review stance.")
-    st.write(
-        "**Your own data** explains how to run the scanner on your own "
-        "month-end close locally: the two data files, how to run it, "
-        "and what stays private.")
-
-    st.markdown("---")
-
-    # -- Sample-data status ---------------------------------------------------
-    st.markdown("#### The sample company")
-    st.write(
-        "Everything here runs on Valencia Operations, a synthetic company "
-        "invented for the demo. Its close data and account history describe "
-        "a month-end close for June 2026, with eight accounts and twelve "
-        "months of trailing history. Because the company and its numbers are "
-        "entirely fictional, nothing you do on this site touches real or "
-        "personal information.")
-
-    DATA_DIR = ROOT / "data"
-    expected = ["close_actuals.csv", "account_history.csv"]
-    present = [f for f in expected if (DATA_DIR / f).exists()]
-    if len(present) == len(expected):
-        st.success(
-            "Sample dataset loaded, {} of {} files present. "
-            "All figures on this site are illustrative.".format(
-                len(present), len(expected)))
-    else:
-        missing = [f for f in expected if f not in present]
-        st.warning(
-            "The sample data is incomplete. Missing: " + ", ".join(missing) +
-            ". The tool page needs these files in the project's data folder.")
+    st.page_link(HOW_IT_WORKS_PAGE, label=(
+        "How it works: the two-stage model, what flags an account, what the "
+        "sliders do, and what the output means for a reviewer"))
+    st.page_link(CLOSE_SCAN_PAGE, label=(
+        "Close scan: a worked example that needs no key, and a scan of the "
+        "sample close at the sensitivity you choose"))
+    st.page_link(OWN_DATA_PAGE, label=(
+        "Your own data: the two data files, how to run the scanner locally, "
+        "and what stays private"))
+    st.page_link(HOW_ITS_BUILT_PAGE, label=(
+        "How it's built: the Python-detects, model-triages boundary, the "
+        "pipeline, determinism and lineage, and the review stance"))
 
     # -- Using your own API key -----------------------------------------------
     with st.expander("Using your own API key"):
@@ -134,34 +105,47 @@ def _home_page():
             "your own numbers, run the project locally from GitHub.")
 
     st.divider()
-    st.caption("Sample data only. All figures are illustrative.")
+    st.caption("Sample data only: Valencia Operations is a fictional company. "
+               "All figures are illustrative.")
+
+    # -- Sample-data status: a warning only if a file is missing ---------------
+    DATA_DIR = ROOT / "data"
+    expected = ["close_actuals.csv", "account_history.csv"]
+    missing = [f for f in expected if not (DATA_DIR / f).exists()]
+    if missing:
+        st.warning(
+            "The sample data is incomplete. Missing: " + ", ".join(missing) +
+            ". The tool page needs these files in the project's data folder.")
 
 
 # -- Multipage navigation (Streamlit >= 1.36) ---------------------------------
 st.set_page_config(
     page_title="Anomaly Detection Agent",
-    page_icon="•",
+    page_icon=":material/search:",
     layout="centered",
     initial_sidebar_state="auto",
 )
 
 PAGES_DIR = Path(__file__).resolve().parent / "pages"
 
-# The worked example lives on this page, in its "View a worked example" tab.
-# The Home button sets this flag so that page opens on the example tab.
+# Titles only change here: each page's address comes from its file name, and
+# a test lists every address.
+HOW_IT_WORKS_PAGE = st.Page(str(PAGES_DIR / "how_it_works.py"),
+                            title="How it works", icon=":material/menu_book:")
+# The worked example lives on this page, in its first tab.
 CLOSE_SCAN_PAGE = st.Page(str(PAGES_DIR / "close_scan.py"),
-                          title="Close Scan", icon=":material/search:")
-OPEN_EXAMPLE_TAB = "cs_open_example"
+                          title="Close scan", icon=":material/search:")
+OWN_DATA_PAGE = st.Page(str(PAGES_DIR / "your_own_data.py"),
+                        title="Your own data", icon=":material/upload_file:")
+HOW_ITS_BUILT_PAGE = st.Page(str(PAGES_DIR / "how_its_built.py"),
+                             title="How it's built", icon=":material/build:")
 
 pg = st.navigation([
     st.Page(_home_page, title="Home", icon=":material/home:"),
-    st.Page(str(PAGES_DIR / "how_it_works.py"),
-            title="How It Works", icon=":material/menu_book:"),
+    HOW_IT_WORKS_PAGE,
     CLOSE_SCAN_PAGE,
-    st.Page(str(PAGES_DIR / "your_own_data.py"),
-            title="Your Own Data", icon=":material/upload_file:"),
-    st.Page(str(PAGES_DIR / "how_its_built.py"),
-            title="How It's Built", icon=":material/build:"),
+    OWN_DATA_PAGE,
+    HOW_ITS_BUILT_PAGE,
 ])
 
 pg.run()
