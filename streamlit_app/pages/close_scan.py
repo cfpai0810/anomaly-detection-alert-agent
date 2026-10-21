@@ -3,10 +3,14 @@
 # =============================================================================
 # Phase 6: sensitivity sliders drive detection live; AI triage runs with a
 # key or shows a keyless worked example at default thresholds. Each triage
-# run is recorded in a session audit trail. Downloads work from either
-# live triage or the example.
+# run is recorded in a session audit trail. A live triage ends with the
+# Sign-off section (the rule in src/signoff.py, after Project 6): its PDF is
+# a DRAFT until a named reviewer signs it.
 # =============================================================================
 
+import hashlib
+import html
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import (
-    inject_css, header_html, priority_badge_html,
+    inject_css, header_html, priority_badge_html, status_chip_html,
     MUTED, FLAG_RED, AMBER, GREEN,
 )
 from streamlit_app.lib.key_gate import render_key_gate
@@ -29,11 +33,11 @@ from streamlit_app.lib.sensitivity import (
 )
 from streamlit_app.lib.triage_helpers import (
     triage_fingerprint, match_triage_to_flagged,
-    sort_by_priority, escape_text,
+    sort_by_priority, escape_text, flag_reasons, outstanding_lines,
 )
 from streamlit_app.lib.cost import format_cost
 from streamlit_app.lib.errors import friendly_message
-from streamlit_app.lib.audit import record_run, get_runs
+from streamlit_app.lib.audit import record_run, get_runs, sign_run
 from streamlit_app.lib.example import load_example
 from src.step1_data_loader import load_close, load_history
 from src.step2_detection_engine import detect_anomalies
@@ -42,6 +46,10 @@ from src.step3_triage_agent import (
 )
 from src.step4_output_writer import (
     build_pdf_bytes, build_csv_bytes, file_sha256, format_money,
+)
+from src.signoff import (
+    FINAL, SCOPE_NOTE, STALE_CAPTION, WORD_HELP, WORD_LABEL,
+    SignOff, pdf_status_line, sign_off,
 )
 from config import (
     CLOSE_FILE, HISTORY_FILE,
@@ -332,12 +340,7 @@ with tab_live:
 
         if f:
             vol_label = f["volatility"]
-            reasons = []
-            if f["material_benchmarks"]:
-                reasons.append("material vs " + ", ".join(f["material_benchmarks"]))
-            if f["stable_moved"]:
-                reasons.append("stable account moved")
-            reason_str = "; ".join(reasons)
+            reason_str = "; ".join(flag_reasons(f))
         else:
             vol_label  = ""
             reason_str = ""
@@ -489,6 +492,128 @@ def _render_triage_cards(matched, missing):
 
 
 # =============================================================================
+# SIGN-OFF (after Project 6: the rule and its messages live in src/signoff.py)
+# =============================================================================
+
+# The sign-off that stands (a SignOff) and the result it was signed for (a
+# fingerprint), the two boxes, the name kept while the section is not drawn,
+# the result the SIGN box was typed for, and the last refusal
+_SIGNED_OFF_KEY = "cs_signed_off"
+_SIGNED_FOR_KEY = "cs_signed_for"
+_REVIEWER_KEY = "cs_reviewer"
+_NAME_KEPT_KEY = "cs_reviewer_kept"
+_SIGN_KEY = "cs_sign"
+_SIGN_FOR_KEY = "cs_sign_for"
+_REFUSAL_KEY = "cs_signoff_refusal"
+
+_SIGN_MEANS = ("Signing says you have read the result against the figures "
+               "above. The figures come from Python. This version does not "
+               "check the numbers in the model's wording.")
+
+
+def _thresholds_key(eff_at, eff_gt, eff_zc, eff_nz):
+    """The effective thresholds as one comparable text: those a triage was
+    run at, or those on screen now (the ones the PDF prints)."""
+    return json.dumps({"account_thresholds": eff_at, "global_threshold": eff_gt,
+                       "z_cutoff": eff_zc, "near_zero": eff_nz},
+                      sort_keys=True, default=float)
+
+
+def _result_fingerprint(state, flagged, thresholds):
+    """The result as the live PDF prints it, as one hash: the run (its number
+    and the model's triage), the flagged accounts with their figures, and
+    the effective thresholds. A sign-off stands only while this is
+    unchanged."""
+    text = json.dumps({
+        "run": state["run"], "narrative": state["narrative"],
+        "matched": state["matched"], "missing": state["missing"],
+        "tokens": [state["tok_in"], state["tok_out"]],
+        "stop_reason": state["stop_reason"],
+        "flagged": flagged, "thresholds": thresholds,
+    }, sort_keys=True, default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _standing_signoff(result):
+    """The sign-off that stands for this result, or None. One made for
+    another result no longer applies: this is a new DRAFT, the name stays
+    filled in and the SIGN box is cleared. The SIGN box is also cleared
+    whenever the result it was typed for changes (a new run)."""
+    ss = st.session_state
+    signed = ss.get(_SIGNED_OFF_KEY)
+    if signed is not None and ss.get(_SIGNED_FOR_KEY) != result:
+        del ss[_SIGNED_OFF_KEY]
+        del ss[_SIGNED_FOR_KEY]
+        ss[_NAME_KEPT_KEY] = signed.name
+        signed = None
+    if ss.get(_SIGN_FOR_KEY) != result:
+        ss[_SIGN_KEY] = ""
+        ss[_SIGN_FOR_KEY] = result
+    return signed
+
+
+def _keep_name():
+    """Keep the typed name under a key of its own: a box that is not drawn
+    (no triage on screen, or a FINAL) loses its value."""
+    st.session_state[_NAME_KEPT_KEY] = st.session_state.get(_REVIEWER_KEY, "")
+
+
+def _sign_off(run, result, outstanding):
+    """The Sign off button (on_click, as in Project 6). The rule decides; the
+    page keeps the sign-off, the result it was signed for, and adds it to
+    the run's row in the session audit."""
+    ss = st.session_state
+    signed, refusal = sign_off(ss.get(_REVIEWER_KEY), ss.get(_SIGN_KEY),
+                               already_signed=_SIGNED_OFF_KEY in ss)
+    if refusal:
+        ss[_REFUSAL_KEY] = refusal
+        return
+    ss[_SIGNED_OFF_KEY] = signed
+    ss[_SIGNED_FOR_KEY] = result
+    sign_run(run, signed, outstanding)
+
+
+def _render_signoff(run, result, signed, stale, outstanding):
+    """The Sign-off section: DRAFT with the boxes and the button, or FINAL
+    and read only. Stale (the thresholds on screen are not those the triage
+    was run at) keeps the button disabled."""
+    ss = st.session_state
+    refusal = ss.pop(_REFUSAL_KEY, None)
+
+    st.markdown("---")
+    st.markdown("#### Sign-off")
+    st.markdown(_SIGN_MEANS)
+
+    if signed is not None:
+        st.markdown("{}&nbsp; {}".format(
+            status_chip_html(FINAL), html.escape(signed.line)),
+            unsafe_allow_html=True)
+        if refusal:
+            st.warning(refusal)
+        st.caption(SCOPE_NOTE)
+        return
+
+    st.markdown(status_chip_html("draft"), unsafe_allow_html=True)
+    if outstanding:
+        st.markdown("Outstanding before you sign:")
+        st.markdown("\n".join("{}. {}".format(i, line) for i, line
+                              in enumerate(outstanding, start=1)))
+    else:
+        st.markdown("Nothing is outstanding.")
+    if _NAME_KEPT_KEY in ss:
+        ss[_REVIEWER_KEY] = ss[_NAME_KEPT_KEY]
+    st.text_input("Reviewer name", key=_REVIEWER_KEY, on_change=_keep_name)
+    st.text_input(WORD_LABEL, key=_SIGN_KEY, help=WORD_HELP)
+    st.button("Sign off", key="cs_signoff", type="primary", on_click=_sign_off,
+              args=(run, result, outstanding), disabled=stale)
+    if stale:
+        st.caption(STALE_CAPTION)
+    st.caption(SCOPE_NOTE)
+    if refusal:
+        st.warning(refusal)
+
+
+# =============================================================================
 # KEYLESS EXAMPLE (cached)
 # =============================================================================
 
@@ -555,6 +680,15 @@ with tab_live:
                     else:
                         matched, missing_names = match_triage_to_flagged(
                             triage_json, flagged)
+                    record_run(
+                        flagged,
+                        (eff_at, eff_gt, eff_zc, eff_nz),
+                        file_sha256(CLOSE_FILE),
+                        file_sha256(HISTORY_FILE),
+                        tok_in, tok_out, stop_reason,
+                    )
+                    # The run's number in the session audit list, and the
+                    # thresholds it was run at, for the Sign-off section
                     st.session_state["triage_state"] = {
                         "fingerprint": fingerprint,
                         "narrative": narrative,
@@ -563,14 +697,10 @@ with tab_live:
                         "tok_in": tok_in,
                         "tok_out": tok_out,
                         "stop_reason": stop_reason,
+                        "run": len(get_runs()),
+                        "thresholds": _thresholds_key(
+                            eff_at, eff_gt, eff_zc, eff_nz),
                     }
-                    record_run(
-                        flagged,
-                        (eff_at, eff_gt, eff_zc, eff_nz),
-                        file_sha256(CLOSE_FILE),
-                        file_sha256(HISTORY_FILE),
-                        tok_in, tok_out, stop_reason,
-                    )
 
         if "triage_state" in st.session_state:
             state = st.session_state["triage_state"]
@@ -598,6 +728,15 @@ with tab_live:
                 _render_narrative(_actions)
             st.caption(format_cost(state["tok_in"], state["tok_out"]))
 
+            # The sign-off that stands for this result, decided before the
+            # PDF is built. The triage on screen always matches the flags on
+            # screen (a changed flagged set clears it above); it is stale
+            # when the thresholds are no longer those it was run at.
+            _thresholds = _thresholds_key(eff_at, eff_gt, eff_zc, eff_nz)
+            _result = _result_fingerprint(state, flagged, _thresholds)
+            _signed = _standing_signoff(_result)
+            _stale = state["thresholds"] != _thresholds
+
             _dl_triage = list(state["matched"].values())
             _dl_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             # A PDF that fails to build shows a plain message; the CSV still
@@ -607,7 +746,8 @@ with tab_live:
                 _dl_pdf = build_pdf_bytes(
                     state["narrative"], flagged, _dl_triage,
                     state["tok_in"], state["tok_out"],
-                    effective_thresholds=(eff_at, eff_gt, eff_zc, eff_nz))
+                    effective_thresholds=(eff_at, eff_gt, eff_zc, eff_nz),
+                    status_line=pdf_status_line(_signed))
             except Exception as exc:
                 _dl_pdf = None
                 _dl_pdf_error = friendly_message(exc)
@@ -619,7 +759,8 @@ with tab_live:
                         _dl_pdf_error))
                 else:
                     st.download_button(
-                        label="Download review PDF",
+                        label=("Download the FINAL PDF" if _signed
+                               else "Download the DRAFT PDF"),
                         data=_dl_pdf,
                         file_name="close_review_{}.pdf".format(_dl_ts),
                         mime="application/pdf",
@@ -631,6 +772,9 @@ with tab_live:
                     file_name="anomalies_{}.csv".format(_dl_ts),
                     mime="text/csv",
                 )
+
+            _render_signoff(state["run"], _result, _signed, _stale,
+                            outstanding_lines(flagged))
 
 with tab_example:
     if fingerprint == example["fingerprint"]:
@@ -699,6 +843,13 @@ if audit_runs:
             st.caption(format_cost(record["tokens_in"], record["tokens_out"]))
             if record["requires_review"]:
                 st.caption("Requires human review: **yes**")
+            if record.get("status") == FINAL:
+                _row_signed = SignOff(
+                    record["signed_off_by"],
+                    datetime.fromisoformat(record["signed_off_at"]))
+                st.markdown("{}&nbsp; {}".format(
+                    status_chip_html(FINAL), html.escape(_row_signed.line)),
+                    unsafe_allow_html=True)
             if i < n_runs - 1:
                 st.divider()
 

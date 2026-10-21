@@ -51,7 +51,8 @@ def _home_page():
         "- On request, the model triages each flag: timing or permanent, "
         "which benchmark matters, what might have caused it.\n"
         "- After a live triage, produces a review PDF and an anomalies CSV "
-        "for the controller.")
+        "for the controller. The PDF is a DRAFT until a named reviewer signs "
+        "it.")
 
     # -- The governance promise -----------------------------------------------
     st.markdown("#### The governance promise")
@@ -61,8 +62,8 @@ def _home_page():
         "- **A rule flags.** The thresholds are yours, not the model's.\n"
         "- **The model triages.** It interprets flags it was given and "
         "cannot change them.\n"
-        "- **A person reviews.** This version has no sign-off step on the web, so "
-        "nothing here is signed or final.")
+        "- **The reviewer signs.** Nothing is final until a named reviewer reads it "
+        "and signs.")
 
     # -- Pages ----------------------------------------------------------------
     st.markdown("#### Pages")

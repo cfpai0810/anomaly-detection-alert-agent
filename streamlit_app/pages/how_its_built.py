@@ -93,10 +93,11 @@ st.write(
     "becomes the immutable record: it is what everyone reads afterwards, "
     "and it cannot be edited. A later change is issued as a new, "
     "separately approved version, and the original approved triage still "
-    "stands unchanged. This live demo stops at flagging for review; it "
-    "does not store or lock anything, so no data is retained. The "
-    "lifecycle diagram above shows the full model this design is built "
-    "towards.")
+    "stands unchanged. This live demo stops at a typed sign-off kept for "
+    "the session: a named reviewer types SIGN, and the PDF turns from DRAFT "
+    "to FINAL. It still does not store or lock anything, so no data is "
+    "retained. The lifecycle diagram above shows the full model this design "
+    "is built towards.")
 
 # ── Part 2: the technical detail (engineer / evaluator) ──────────────────────
 st.markdown("---")

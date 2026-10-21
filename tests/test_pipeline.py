@@ -1840,7 +1840,8 @@ class TestPdfText:
         at = _close_scan_after_run(_reply_from_capture(triage))
         assert not at.exception
         assert [e.value for e in at.error] == []
-        assert _download_labels(at) == ["Download review PDF", "Download anomalies CSV"]
+        # Since Step 5b the review PDF is a DRAFT until a reviewer signs it.
+        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
 
     def test_item35_close_scan_pdf_failure_keeps_csv(self):
         """If the PDF cannot be built, a plain message shows and the CSV still
@@ -2173,7 +2174,7 @@ class TestStep5Look:
                        if m.value.startswith("- **Python detects.**"))
         assert [line.split("**")[1] for line in promise.splitlines()] == [
             "Python detects.", "A rule flags.", "The model triages.",
-            "A person reviews."]
+            "The reviewer signs."]
         links = at.get("page_link")
         assert [link.proto.page for link in links] == [
             "how_it_works", "close_scan", "your_own_data", "how_its_built"]
@@ -2301,7 +2302,7 @@ class TestStep5TabsAtTheTop:
             at.button(key="run_triage").click().run()
         assert not at.exception
         assert _tab_place(at) == place
-        assert _download_labels(at) == ["Download review PDF", "Download anomalies CSV"]
+        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
 
     def test_v5_example_tab_names_where_the_controls_are(self):
         at = _page("pages/close_scan.py")
@@ -2310,3 +2311,387 @@ class TestStep5TabsAtTheTop:
             "The captured triage was produced at the default sensitivity. "
             "Move the sliders in Run it yourself back to Medium to see it, or "
             "enter an API key in the sidebar to run live triage."]
+
+
+# =============================================================================
+# Step 5b: the Sign-off section, after Project 6 (the rule in src/signoff.py)
+# =============================================================================
+
+from src.signoff import (
+    ALREADY_SIGNED, NAME_LIMIT, NAME_REFUSAL, SCOPE_NOTE, STALE_CAPTION,
+    WORD_HELP, WORD_LABEL, WORD_REFUSAL, clean_name, pdf_name, when_text,
+)
+from streamlit_app.lib.triage_helpers import flag_reasons, outstanding_lines
+
+_SIGN_MEANS = ("Signing says you have read the result against the figures "
+               "above. The figures come from Python. This version does not "
+               "check the numbers in the model's wording.")
+_DRAFT_CHIP = '<span class="sc-status draft">DRAFT</span>'
+_FINAL_CHIP = '<span class="sc-status final">FINAL</span>'
+# The flagged accounts at the default sensitivity, as the section lists them
+_DEFAULT_FLAGS = [
+    "Marketing Spend: material vs prior, budget, forecast; unusual for account.",
+    "IT Infrastructure: stable account moved.",
+    "Travel & Ent: material vs prior, budget, forecast; unusual for account.",
+]
+# Materiality Medium, volatility Low: the flagged set and its reasons are the
+# same at volatility Very low, so a triage run at one stays on screen at the
+# other (the model would be sent the same prompt).
+_LOW_VOL_FLAGS = [
+    "Marketing Spend: material vs prior, budget, forecast.",
+    "IT Infrastructure: stable account moved.",
+    "Travel & Ent: material vs prior, budget, forecast.",
+]
+
+
+@pytest.fixture
+def stand_in(monkeypatch):
+    """Every client the page builds, on every rerun, is a stand-in that
+    replies with the worked example's capture: no key, no network."""
+    reply = _reply_from_capture(_sample_capture()["triage"])
+    monkeypatch.setattr("anthropic.Anthropic",
+                        lambda api_key=None, **kw: _ReplyingClient(reply))
+
+
+@pytest.fixture
+def downloads(monkeypatch):
+    """Reads the file behind a download button: while the test runs, every
+    file the page hands to one is kept by its media id."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+    files = {}
+    load = MemoryMediaFileStorage.load_and_get_id
+
+    def _load(self, data, mimetype, kind, filename=None):
+        file_id = load(self, data, mimetype, kind, filename)
+        files[file_id] = self.get_file(file_id).content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", _load)
+
+    def read(at, label):
+        (button,) = [d for d in at.get("download_button") if d.proto.label == label]
+        return files[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+    return read
+
+
+def _triaged(vol=None):
+    """Close scan after Run AI triage with the stand-in client, optionally at
+    another volatility sensitivity."""
+    at = _app_test()
+    at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+    at.switch_page("pages/close_scan.py").run()
+    if vol:
+        at.select_slider(key="vol_level").set_value(vol).run()
+    at.button(key="run_triage").click().run()
+    assert not at.exception
+    return at
+
+
+def _signoff_section(at):
+    """The Sign-off section's text, from its heading on (Run it yourself)."""
+    values = [m.value for m in at.tabs[1].markdown]
+    return values[values.index("#### Sign-off"):]
+
+
+def _numbered(markdown):
+    """The lines of a numbered markdown list, without their numbers."""
+    lines = markdown.splitlines()
+    assert [line.split(". ", 1)[0] for line in lines] == [
+        str(i) for i in range(1, len(lines) + 1)]
+    return [line.split(". ", 1)[1] for line in lines]
+
+
+def _sign(at, name="José Núñez", word="SIGN"):
+    at.text_input(key="cs_reviewer").input(name).run()
+    at.text_input(key="cs_sign").input(word).run()
+    at.button(key="cs_signoff").click().run()
+    assert not at.exception
+
+
+def _boxes(at):
+    return [(t.key, t.value) for t in at.text_input
+            if t.key in ("cs_reviewer", "cs_sign")]
+
+
+def _signoff_buttons(at):
+    return [b for b in at.button if b.key == "cs_signoff"]
+
+
+def _audit_rows(at):
+    return at.session_state["scan_audit"] if "scan_audit" in at.session_state else []
+
+
+class TestStep5bSignOff:
+    """The Sign-off section: the rule in src/signoff.py, drawn as in Project 6,
+    after the live triage and its downloads, before the session audit."""
+
+    def test_5b_no_section_without_a_triage(self, stand_in):
+        at = _page("pages/close_scan.py")
+        assert "#### Sign-off" not in [m.value for m in at.markdown]
+        at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
+        assert [b.key for b in at.button] == ["run_triage"]
+        assert "#### Sign-off" not in [m.value for m in at.markdown]
+        assert not _boxes(at) and not _signoff_buttons(at)
+        # The worked example has no section and no download, as before.
+        assert not [m for m in at.tabs[0].markdown if "Sign-off" in m.value]
+        assert _download_labels(at) == []
+
+    def test_5b_from_run_to_final(self, stand_in, downloads):
+        at = _triaged()
+        live = at.tabs[1]
+        # After the triage and its downloads, at the level of its siblings
+        headings = [m.value for m in live.markdown if m.value.startswith("#")]
+        assert headings == ["#### The close", "#### Detection sensitivity",
+                            "#### Scan results", "#### AI triage", "#### Sign-off"]
+        section = _signoff_section(at)
+        assert section == ["#### Sign-off", _SIGN_MEANS, _DRAFT_CHIP,
+                           "Outstanding before you sign:", section[4]]
+        assert _numbered(section[4]) == _DEFAULT_FLAGS
+        assert [(t.label, t.help) for t in live.text_input
+                if t.key in ("cs_reviewer", "cs_sign")] == [
+            ("Reviewer name", ""), (WORD_LABEL, WORD_HELP)]
+        (button,) = _signoff_buttons(at)
+        assert button.label == "Sign off" and button.proto.type == "primary"
+        assert not button.disabled
+        captions = [c.value for c in live.caption]
+        assert captions.count(SCOPE_NOTE) == 1 and STALE_CAPTION not in captions
+        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
+        draft = _extract_pdf_text(downloads(at, "Download the DRAFT PDF")).splitlines()
+        assert draft[0] == "MONTH-END CLOSE ANOMALY REVIEW"
+        assert draft[2].startswith("Generated ")
+        assert draft[3:5] == ["DRAFT: not signed off", "AI TRIAGE ASSESSMENT"]
+
+        # Refused: no name, a wrong word, the word in lower case. Each stays DRAFT.
+        for name, word, refusal in [("   ", "SIGN", NAME_REFUSAL),
+                                    ("José Núñez", "SIGNED", WORD_REFUSAL),
+                                    ("José Núñez", "sign", WORD_REFUSAL)]:
+            _sign(at, name, word)
+            assert [w.value for w in at.tabs[1].warning] == [refusal]
+            assert _signoff_section(at)[2] == _DRAFT_CHIP
+            assert "cs_signed_off" not in at.session_state
+            assert "status" not in _audit_rows(at)[0]
+            assert _download_labels(at)[0] == "Download the DRAFT PDF"
+
+        # Signed: FINAL, the signed line, read only, the FINAL PDF
+        _sign(at, "José Núñez", " SIGN ")
+        signed = at.session_state["cs_signed_off"]
+        when = when_text(signed.signed_at)
+        line = "Signed off by José Núñez on {}.".format(when)
+        assert _signoff_section(at) == [
+            "#### Sign-off", _SIGN_MEANS, "{}&nbsp; {}".format(_FINAL_CHIP, line)]
+        assert not at.tabs[1].warning
+        assert not _boxes(at) and not _signoff_buttons(at)
+        assert [c.value for c in at.tabs[1].caption].count(SCOPE_NOTE) == 1
+        assert _download_labels(at) == ["Download the FINAL PDF", "Download anomalies CSV"]
+        final = _extract_pdf_text(downloads(at, "Download the FINAL PDF")).splitlines()
+        assert final[3:5] == ["FINAL: signed off by José Núñez on {}".format(when),
+                              "AI TRIAGE ASSESSMENT"]
+        assert "DRAFT: not signed off" not in final
+
+        # The run's session audit row carries the sign-off and the flagged
+        # accounts shown at sign-off, and the session audit list shows it.
+        (row,) = _audit_rows(at)
+        assert {k: row[k] for k in ("status", "signed_off_by", "signed_off_at")} == {
+            "status": "final", "signed_off_by": "José Núñez",
+            "signed_off_at": signed.signed_at.isoformat()}
+        assert row["acknowledged_at_sign_off"] == _DEFAULT_FLAGS
+        assert row["flagged_accounts"] == [
+            "Marketing Spend", "IT Infrastructure", "Travel & Ent"]
+        (audit,) = [e for e in at.main.expander if e.label == "Session audit (1 run)"]
+        assert "{}&nbsp; {}".format(_FINAL_CHIP, line) in [m.value for m in audit.markdown]
+
+    def test_5b_a_second_signoff_is_refused(self, stand_in):
+        at = _triaged(vol="Low")
+        _sign(at)
+        signed = at.session_state["cs_signed_off"]
+        result = at.session_state["cs_signed_for"]
+        # The page offers no second Sign off.
+        assert not _signoff_buttons(at) and not _boxes(at)
+        # And the rule refuses one: the same result, signed again while a
+        # sign-off for it stands (a second click that lands after the first).
+        at.select_slider(key="vol_level").set_value("Very low").run()
+        at.select_slider(key="vol_level").set_value("Low").run()
+        at.text_input(key="cs_sign").input("SIGN").run()
+        at.session_state["cs_signed_off"] = signed
+        at.session_state["cs_signed_for"] = result
+        at.button(key="cs_signoff").click().run()
+        assert not at.exception
+        assert [w.value for w in at.tabs[1].warning] == [ALREADY_SIGNED]
+        assert at.session_state["cs_signed_off"] == signed
+        (row,) = _audit_rows(at)
+        assert row["signed_off_at"] == signed.signed_at.isoformat()
+        assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
+
+    def test_5b_a_new_triage_is_a_new_draft(self, stand_in, downloads):
+        at = _triaged()
+        _sign(at, "A. Reviewer")
+        first = dict(_audit_rows(at)[0])
+        at.button(key="run_triage").click().run()      # the same flags, a new run
+        assert not at.exception
+        section = _signoff_section(at)
+        assert section[2] == _DRAFT_CHIP and _numbered(section[4]) == _DEFAULT_FLAGS
+        # The name stays filled in; SIGN must be typed again.
+        assert _boxes(at) == [("cs_reviewer", "A. Reviewer"), ("cs_sign", "")]
+        assert "cs_signed_off" not in at.session_state
+        assert "DRAFT: not signed off" in _extract_pdf_text(
+            downloads(at, "Download the DRAFT PDF"))
+        # Run 1 keeps its sign-off; run 2 has none until it is signed.
+        run2, run1 = _audit_rows(at)
+        assert run1 == first and "status" not in run2
+        _sign(at, "A. Reviewer")
+        run2, run1 = _audit_rows(at)
+        assert run2["signed_off_by"] == "A. Reviewer" and run1 == first
+        assert run2["signed_off_at"] != run1["signed_off_at"]
+
+    def test_5b_a_new_triage_clears_a_typed_sign_word(self, stand_in):
+        at = _triaged()
+        at.text_input(key="cs_reviewer").input("A. Reviewer").run()
+        at.text_input(key="cs_sign").input("SIGN").run()
+        at.button(key="run_triage").click().run()
+        assert _boxes(at) == [("cs_reviewer", "A. Reviewer"), ("cs_sign", "")]
+
+    def test_5b_thresholds_that_change_the_flags_clear_the_triage(self, stand_in):
+        at = _triaged()
+        _sign(at, "A. Reviewer")
+        # The page clears a triage whose flagged set changed, and the section
+        # goes with it: no stale triage is ever on screen.
+        at.select_slider(key="mat_level").set_value("High").run()
+        assert not at.exception
+        assert "The flagged set changed. Run AI triage again to interpret the " \
+               "current accounts." in [i.value for i in at.info]
+        assert "#### Sign-off" not in [m.value for m in at.markdown]
+        assert _download_labels(at) == []
+        # Back to Medium: the triage was cleared, so still nothing to sign.
+        at.select_slider(key="mat_level").set_value("Medium").run()
+        assert "#### Sign-off" not in [m.value for m in at.markdown]
+        # A new triage is a new DRAFT with the name kept.
+        at.button(key="run_triage").click().run()
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        assert _boxes(at) == [("cs_reviewer", "A. Reviewer"), ("cs_sign", "")]
+        run2, run1 = _audit_rows(at)
+        assert run1["status"] == "final" and "status" not in run2
+
+    def test_5b_thresholds_that_keep_the_flags_are_stale(self, stand_in, downloads):
+        at = _triaged(vol="Low")
+        _sign(at, "A. Reviewer")
+        assert _audit_rows(at)[0]["acknowledged_at_sign_off"] == _LOW_VOL_FLAGS
+        # Volatility Very low flags the same accounts for the same reasons, so
+        # the triage stays; the thresholds it was run at no longer stand.
+        at.select_slider(key="vol_level").set_value("Very low").run()
+        assert not at.exception
+        assert any(m.value.startswith('<div class="sc-narrative">') for m in at.tabs[1].markdown)
+        section = _signoff_section(at)
+        assert section[2] == _DRAFT_CHIP and _numbered(section[4]) == _LOW_VOL_FLAGS
+        assert _boxes(at) == [("cs_reviewer", "A. Reviewer"), ("cs_sign", "")]
+        (button,) = _signoff_buttons(at)
+        assert button.disabled
+        captions = [c.value for c in at.tabs[1].caption]
+        assert captions.index(STALE_CAPTION) + 1 == captions.index(SCOPE_NOTE)
+        draft = _extract_pdf_text(downloads(at, "Download the DRAFT PDF"))
+        assert "DRAFT: not signed off" in draft
+        assert "Modified z-score cutoff: 8.0." in draft     # Very low; the run was at 5.5
+        # Back to the thresholds of the run: a DRAFT that can be signed again
+        at.select_slider(key="vol_level").set_value("Low").run()
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        (button,) = _signoff_buttons(at)
+        assert not button.disabled
+        assert STALE_CAPTION not in [c.value for c in at.caption]
+        first = _audit_rows(at)[0]["signed_off_at"]
+        _sign(at, "A. Reviewer")
+        (row,) = _audit_rows(at)        # the same run: its sign-off is replaced
+        assert row["status"] == "final" and row["signed_off_at"] != first
+        assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
+
+    def test_5b_a_key_change_on_its_own_keeps_the_signoff(self, stand_in):
+        # The key is not an input of the result: only a new run is.
+        at = _triaged()
+        _sign(at)
+        at.sidebar.text_input(key="byo_api_key").input(
+            "sk-ant-api03-" + "y" * 90).run()
+        assert not at.exception
+        assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
+        assert _download_labels(at)[0] == "Download the FINAL PDF"
+        at.button(key="run_triage").click().run()
+        assert _signoff_section(at)[2] == _DRAFT_CHIP
+        assert _boxes(at) == [("cs_reviewer", "José Núñez"), ("cs_sign", "")]
+
+    def test_5b_names_print_safely(self, stand_in, downloads):
+        at = _triaged()
+        typed = "Zoë 李 <b>R&D</b>\x07" + "x" * 100
+        _sign(at, typed)
+        signed = at.session_state["cs_signed_off"]
+        assert signed.name == clean_name(typed) and len(signed.name) == NAME_LIMIT
+        assert signed.name.startswith("Zoë 李 <b>R&D</b>xxx")
+        # On screen as typed, escaped; in the PDF as its fonts print it, never
+        # as markup
+        assert _signoff_section(at)[2] == "{}&nbsp; {}".format(
+            _FINAL_CHIP, html.escape(signed.line))
+        final = "".join(_extract_pdf_text(downloads(at, "Download the FINAL PDF")).split())
+        status = "FINAL: signed off by {} on {}".format(
+            pdf_name(signed.name), when_text(signed.signed_at))
+        assert status.startswith("FINAL: signed off by Zoë ? <b>R&D</b>xxx")
+        assert "".join(status.split()) in final
+        assert _audit_rows(at)[0]["signed_off_by"] == signed.name
+
+    def test_5b_outstanding_lines_use_the_tables_words(self):
+        at = _page("pages/close_scan.py")
+        at.select_slider(key="mat_level").set_value("High").run()
+        at.select_slider(key="vol_level").set_value("High").run()
+        table = next(d.value for d in at.dataframe if "Reason" in d.value.columns)
+        reasons = dict(zip(table["Account"], table["Reason"]))
+        flagged, _ = detect_anomalies(
+            load_close(CLOSE_FILE), load_history(HISTORY_FILE),
+            *effective_thresholds("High", "High"))
+        lines = outstanding_lines(flagged)
+        assert lines == [
+            "COGS: material vs budget, forecast.",
+            "Marketing Spend: material vs prior, budget, forecast; unusual for account.",
+            "IT Infrastructure: material vs prior, budget, forecast; stable account moved.",
+            "Travel & Ent: material vs prior, budget, forecast; unusual for account.",
+            "Utilities: unusual for account.",
+        ]
+        for f, line in zip(flagged, lines):
+            assert reasons[f["account"]] == "; ".join(flag_reasons(f))
+            assert line.startswith("{}: {}".format(f["account"], reasons[f["account"]]))
+        # "Nothing is outstanding." needs a triage with no flags, which this
+        # page never shows: with nothing flagged there is nothing to triage.
+        assert outstanding_lines([]) == []
+
+    def test_5b_cli_and_example_pdfs_have_no_status_line(self, flagged, tmp_dirs):
+        capture = _sample_capture()
+        text = _extract_pdf_text(build_pdf_bytes(
+            capture["narrative"], flagged, capture["triage"], 1191, 930)).splitlines()
+        assert text[3] == "AI TRIAGE ASSESSMENT"
+        from src.step4_output_writer import write_pdf
+        path = write_pdf(capture["narrative"], flagged, capture["triage"], 1191, 930)
+        cli = _extract_pdf_text(path.read_bytes())
+        assert cli.splitlines()[3] == "AI TRIAGE ASSESSMENT"
+        for words in ("DRAFT", "FINAL", "signed off"):
+            assert words not in cli and words not in "\n".join(text)
+
+    def test_5b_wording(self):
+        root = Path(__file__).resolve().parent.parent
+        at = _page()
+        values = [m.value for m in at.main.markdown]
+        what = values[values.index("#### What it does") + 1]
+        promise = values[values.index("#### The governance promise") + 1]
+        assert what.splitlines()[-1] == (
+            "- After a live triage, produces a review PDF and an anomalies CSV for "
+            "the controller. The PDF is a DRAFT until a named reviewer signs it.")
+        assert promise.splitlines()[-1] == (
+            "- **The reviewer signs.** Nothing is final until a named reviewer reads "
+            "it and signs.")
+        built = " ".join(m.value for m in _page("pages/how_its_built.py").markdown)
+        assert ("This live demo stops at a typed sign-off kept for the session: a "
+                "named reviewer types SIGN, and the PDF turns from DRAFT to FINAL. It "
+                "still does not store or lock anything, so no data is retained.") in built
+        stale = ["stops at flagging for review", "no sign-off step", "nobody approves",
+                 "A person reviews", "nothing here is signed", "Download review PDF"]
+        for path in [root / "README.md", *(root / "streamlit_app").rglob("*.py"),
+                     *(root / "src").glob("*.py")]:
+            text = path.read_text(encoding="utf-8")
+            assert not [s for s in stale if s in text], path.name
+        # The lifecycle diagram keeps the production design (approve, lock).
+        lifecycle = (root / "streamlit_app" / "lib" / "governance_lifecycle.py").read_text(
+            encoding="utf-8")
+        assert "YOU APPROVE" in lifecycle

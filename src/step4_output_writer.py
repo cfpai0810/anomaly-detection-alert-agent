@@ -69,6 +69,8 @@ S_TBL_HDR = ParagraphStyle("TblHdr", fontName="Helvetica-Bold", fontSize=8,
                 textColor=DARK_BLUE, leading=10)
 S_TBL_NUM = ParagraphStyle("TblNum", fontName="Helvetica", fontSize=8,
                 textColor=BODY_DARK, leading=10, alignment=TA_RIGHT)
+S_STATUS  = ParagraphStyle("Status", fontName="Helvetica-Bold", fontSize=10,
+                textColor=DARK_BLUE, leading=13)
 
 PRIORITY_COLORS = {
     "HIGH":   (FLAG_RED, FLAG_BG),
@@ -559,8 +561,12 @@ def _triage_narrative_section(triage_json, summary):
 
 
 def _build_pdf_story(triage_narrative, flagged, triage_json, tok_in, tok_out,
-                     effective_thresholds=None):
-    """Assemble the list of ReportLab flowables for the review PDF."""
+                     effective_thresholds=None, status_line=None):
+    """Assemble the list of ReportLab flowables for the review PDF.
+
+    status_line is the web page's sign-off status (pdf_status_line in
+    src/signoff.py), printed under the cover block. None, the default,
+    prints nothing, so the CLI's PDF stays as it was."""
     now    = datetime.now(timezone.utc)
     ts_log = now.isoformat()
 
@@ -576,6 +582,10 @@ def _build_pdf_story(triage_narrative, flagged, triage_json, tok_in, tok_out,
     story.append(_cover_block(DEFAULT_ENTITY, CLOSE_PERIOD, len(flagged),
                               ts_log, tok_in, tok_out))
     story.append(Spacer(1, 0.4 * cm))
+    if status_line is not None:
+        # The reviewer's name is in it: escaped, never read as markup
+        story.append(Paragraph(pdf_text(status_line), S_STATUS))
+        story.append(Spacer(1, 0.3 * cm))
 
     summary, _ = _narrative_highlights(triage_narrative)
     story.append(_section_header("AI TRIAGE ASSESSMENT"))
@@ -641,10 +651,13 @@ def write_pdf(triage_narrative, flagged, triage_json, tok_in, tok_out):
 
 
 def build_pdf_bytes(triage_narrative, flagged, triage_json, tok_in, tok_out,
-                    effective_thresholds=None):
-    """Build the review PDF in memory and return the bytes."""
+                    effective_thresholds=None, status_line=None):
+    """Build the review PDF in memory and return the bytes. The web page
+    passes its sign-off status_line (DRAFT or FINAL); without one the PDF
+    has no status line, as the CLI's."""
     story = _build_pdf_story(triage_narrative, flagged, triage_json,
-                             tok_in, tok_out, effective_thresholds)
+                             tok_in, tok_out, effective_thresholds,
+                             status_line)
     buf = io.BytesIO()
     doc = _build_pdf_doc(buf)
     doc.build(story)

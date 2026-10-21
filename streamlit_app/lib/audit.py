@@ -3,7 +3,9 @@
 # =============================================================================
 # build_audit_record() is a pure function (no Streamlit dependency) so it can
 # be tested in the main test suite.  record_run() and get_runs() are thin
-# Streamlit wrappers that store the records in session_state.
+# Streamlit wrappers that store the records in session_state. sign_run()
+# adds a reviewer's sign-off to its run's row: who, when, and the flagged
+# accounts shown at sign-off (SignOff.record from src/signoff.py).
 # =============================================================================
 
 from datetime import datetime, timezone
@@ -52,6 +54,18 @@ def record_run(flagged, eff_thresholds, close_hash, history_hash,
     if AUDIT_KEY not in st.session_state:
         st.session_state[AUDIT_KEY] = []
     st.session_state[AUDIT_KEY].insert(0, record)
+    return record
+
+
+def sign_run(run, signed, acknowledged):
+    """Add a sign-off to the row of run number `run`, as the session audit
+    list numbers its runs (the first run is 1). signed is the SignOff from
+    src/signoff.py; acknowledged is the list of flagged accounts shown at
+    sign-off. A later sign-off of the same run replaces it."""
+    import streamlit as st
+    runs = st.session_state[AUDIT_KEY]
+    record = runs[len(runs) - run]
+    record.update(signed.record(acknowledged))
     return record
 
 

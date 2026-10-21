@@ -89,6 +89,13 @@ The script checks that every anomaly has a disposition and warns if any are
 blank before recording who reviewed and when. The agent informs the decision;
 the controller makes it, and the audit trail proves it was made.
 
+On the live demo, a live triage ends with a Sign-off section: the flagged
+accounts are listed, and a named reviewer types SIGN to sign the result off.
+Until then the review PDF is a DRAFT; once signed it is FINAL and carries the
+reviewer's name and the time. The name and time go into that PDF and the
+session's audit list only. They are not stored on the server, and the name is
+not verified.
+
 ---
 
 ## How to run
@@ -131,6 +138,7 @@ src/
   step2_detection_engine.py      Layer 3: variance, materiality, volatility
   step3_triage_agent.py          Layer 4: prompt, Claude call, JSON parsing
   step4_output_writer.py         Layer 5: text, PDF, anomalies CSV, audit
+  signoff.py                     The sign-off rule: a named reviewer types SIGN (DRAFT or FINAL)
 
 data/
   close_actuals.csv              One close: account, actual, budget, prior, forecast
@@ -143,7 +151,8 @@ docs/
 
 output/                          Generated files (gitignored)
 tests/
-  test_pipeline.py               225 tests
+  test_pipeline.py               237 tests
+  test_signoff.py                8 tests: the sign-off rule
 ```
 
 ---
@@ -220,17 +229,18 @@ record also carries `reviewed_by`, `reviewed_at`, and the disposition counts.
 
 ## Test suite
 
-225 tests. No real API calls. A full run takes about one to two minutes:
+245 tests. No real API calls. A full run takes about one to two minutes:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests/test_pipeline.py -v
+pytest tests -v
 ```
 
 The classes cover data loading, the near-zero variance guard, the three-part
 materiality rule, per-account thresholds, the modified z-score (including its
 robustness to outliers), the full detection integration, JSON parsing, account
-name normalisation, and output writing with the audit trail.
+name normalisation, output writing with the audit trail, and the sign-off rule
+and section.
 
 ---
 

@@ -40,6 +40,32 @@ def triage_fingerprint(flagged):
     return json.dumps(entries, sort_keys=True)
 
 
+def flag_reasons(flag):
+    """Why the scan results table flags an account, in its Reason column's
+    words: the benchmarks the variance is material against, and a stable
+    account that moved."""
+    reasons = []
+    if flag["material_benchmarks"]:
+        reasons.append("material vs " + ", ".join(flag["material_benchmarks"]))
+    if flag["stable_moved"]:
+        reasons.append("stable account moved")
+    return reasons
+
+
+def outstanding_lines(flagged):
+    """What is outstanding before sign-off: one line per flagged account, in
+    the scan results table's order and words (its Reason column, then its
+    Volatility column when an unusual value is what flags the account).
+    Nothing here blocks signing."""
+    lines = []
+    for f in flagged:
+        reasons = flag_reasons(f)
+        if f["volatility"] == "unusual_for_account":
+            reasons.append(f["volatility"].replace("_", " "))
+        lines.append("{}: {}.".format(f["account"], "; ".join(reasons)))
+    return lines
+
+
 def match_triage_to_flagged(triage_json, flagged):
     """Match triage entries to flagged accounts by normalised name.
 
