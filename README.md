@@ -152,7 +152,7 @@ docs/
 output/                          Generated files (gitignored)
 tests/
   test_pipeline.py               237 tests
-  test_signoff.py                8 tests: the sign-off rule
+  test_signoff.py                9 tests: the sign-off rule
 ```
 
 ---
@@ -229,7 +229,7 @@ record also carries `reviewed_by`, `reviewed_at`, and the disposition counts.
 
 ## Test suite
 
-245 tests. No real API calls. A full run takes about one to two minutes:
+246 tests. No real API calls. A full run takes about one to two minutes:
 
 ```bash
 pip install -r requirements-dev.txt

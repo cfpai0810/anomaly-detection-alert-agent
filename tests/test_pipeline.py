@@ -1950,6 +1950,9 @@ class TestTabularFigures:
         global_rule = global_rule[:global_rule.index("}")]
         assert "tnum" not in global_rule
         assert '"cv05" 1' in global_rule
+        # Lists, bold, italics and captions in Inter too, as Project 6's
+        # theme sets them (5b fix round)
+        assert "th, ul, ol, li, strong, em, caption {" in global_rule
 
     def test_ux4_numeric_rule_lists_table(self):
         css = inject_css()

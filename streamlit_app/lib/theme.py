@@ -50,7 +50,7 @@ def inject_css():
       /* Body, UI, and data: Inter. No tabular figures here: they draw the
          hyphen as wide as a digit in running text. */
       html, body, [class*="css"], .stMarkdown, .stText, p, span, div, label,
-      input, button, table, td, th {{
+      input, button, table, td, th, ul, ol, li, strong, em, caption {{
         font-family: {SANS};
         font-feature-settings: "cv05" 1;
       }}
