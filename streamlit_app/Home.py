@@ -127,18 +127,26 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-PAGES_DIR = Path(__file__).resolve().parent / "pages"
+# The view files live in a folder NOT named "pages", so Streamlit's automatic
+# pages/ navigation never triggers and st.navigation() below is the sole nav
+# (with these explicit titles and this order, not filename-derived alphabetical),
+# even when a page's address is the first request to a freshly started app.
+# Each page's address is pinned with url_path: the addresses are published, so
+# neither a new title nor a renamed file may move them. A test lists them all.
+VIEWS_DIR = Path(__file__).resolve().parent / "views"
 
-# Titles only change here: each page's address comes from its file name, and
-# a test lists every address.
-HOW_IT_WORKS_PAGE = st.Page(str(PAGES_DIR / "how_it_works.py"),
+HOW_IT_WORKS_PAGE = st.Page(str(VIEWS_DIR / "how_it_works.py"),
+                            url_path="how_it_works",
                             title="How it works", icon=":material/menu_book:")
 # The worked example lives on this page, in its first tab.
-CLOSE_SCAN_PAGE = st.Page(str(PAGES_DIR / "close_scan.py"),
+CLOSE_SCAN_PAGE = st.Page(str(VIEWS_DIR / "close_scan.py"),
+                          url_path="close_scan",
                           title="Close scan", icon=":material/search:")
-OWN_DATA_PAGE = st.Page(str(PAGES_DIR / "your_own_data.py"),
+OWN_DATA_PAGE = st.Page(str(VIEWS_DIR / "your_own_data.py"),
+                        url_path="your_own_data",
                         title="Your own data", icon=":material/upload_file:")
-HOW_ITS_BUILT_PAGE = st.Page(str(PAGES_DIR / "how_its_built.py"),
+HOW_ITS_BUILT_PAGE = st.Page(str(VIEWS_DIR / "how_its_built.py"),
+                             url_path="how_its_built",
                              title="How it's built", icon=":material/build:")
 
 pg = st.navigation([

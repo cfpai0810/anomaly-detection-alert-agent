@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/how_it_works.py -- user-facing explanation of the tool
+# views/how_it_works.py: user-facing explanation of the tool
 # =============================================================================
 
 import sys

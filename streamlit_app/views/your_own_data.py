@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/your_own_data.py -- running the scanner on your own data
+# views/your_own_data.py: running the scanner on your own data
 # =============================================================================
 # Renders docs/bring_your_own_data.md in Streamlit. The doc is the
 # single source of truth; this page just reads and displays it.

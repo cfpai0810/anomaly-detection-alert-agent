@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/how_its_built.py -- the technical and governance story
+# views/how_its_built.py: the technical and governance story
 # =============================================================================
 # Two audiences on one page. Part 1 is for a finance leader: why an AI-assisted
 # anomaly scanner can be trusted (the separated layers, the flag-for-review

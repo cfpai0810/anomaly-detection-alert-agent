@@ -1,5 +1,5 @@
 # =============================================================================
-# pages/close_scan.py: the close anomaly scan surface
+# views/close_scan.py: the close anomaly scan surface
 # =============================================================================
 # Phase 6: sensitivity sliders drive detection live; AI triage runs with a
 # key or shows a keyless worked example at default thresholds. Each triage

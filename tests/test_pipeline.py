@@ -1594,7 +1594,7 @@ class TestPlainFailureMessages:
         with patch("anthropic.Anthropic", stand_in_anthropic):
             at = _app_test()
             at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
-            at.switch_page("pages/close_scan.py").run()
+            at.switch_page("views/close_scan.py").run()
             at.button(key="run_triage").click().run()
         errors = [e.value for e in at.error]
         assert errors == [model_failure_message("key_rejected")]
@@ -1635,8 +1635,8 @@ class TestKeyGate:
         at = _app_test()
         at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
         assert isinstance(at.session_state["live_client"], anthropic.Anthropic)
-        at.switch_page("pages/how_it_works.py").run()
-        at.switch_page("pages/close_scan.py").run()
+        at.switch_page("views/how_it_works.py").run()
+        at.switch_page("views/close_scan.py").run()
         assert not at.exception
         assert isinstance(at.session_state["live_client"], anthropic.Anthropic)
         assert [b.label for b in at.button] == ["Run AI triage"]
@@ -1722,7 +1722,7 @@ def _close_scan_after_run(reply):
     with patch("anthropic.Anthropic", lambda api_key=None, **kw: _ReplyingClient(reply)):
         at = _app_test()
         at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
-        at.switch_page("pages/close_scan.py").run()
+        at.switch_page("views/close_scan.py").run()
         at.button(key="run_triage").click().run()
     return at
 
@@ -1757,7 +1757,7 @@ class TestSignBeforeSymbol:
 
     def test_item58_close_scan_table(self):
         at = _app_test()
-        at.switch_page("pages/close_scan.py").run()
+        at.switch_page("views/close_scan.py").run()
         table = next(d.value for d in at.dataframe if "vs Prior" in d.value.columns)
         rows = table.set_index("Account")
         assert rows.loc["Revenue", "vs Prior"] == "-€30,000 (-2.3%)"
@@ -1999,7 +1999,7 @@ class TestWorkedExampleTab:
 
     def test_ux2_sidebar_link_still_opens_the_first_tab(self):
         at = _app_test()
-        at.switch_page("pages/close_scan.py").run()
+        at.switch_page("views/close_scan.py").run()
         assert not at.exception
         tab_sets = _blocks_of_type(at.main, "tab_container")
         assert len(tab_sets) == 1
@@ -2089,10 +2089,10 @@ from streamlit_app.lib.theme import DARK_BLUE, status_chip_html
 # Each page as AppTest opens it (None is Home), with the name its banner shows
 BANNERS = {
     None: "Anomaly Detection and Alert Agent",
-    "pages/how_it_works.py": "How it works",
-    "pages/close_scan.py": "Close scan",
-    "pages/your_own_data.py": "Your own data",
-    "pages/how_its_built.py": "How it's built",
+    "views/how_it_works.py": "How it works",
+    "views/close_scan.py": "Close scan",
+    "views/your_own_data.py": "Your own data",
+    "views/how_its_built.py": "How it's built",
 }
 
 
@@ -2150,7 +2150,7 @@ class TestStep5Look:
                     and m.value.lstrip("#").strip().startswith(title)]
 
     def test_v2_close_scan_title_line_is_a_caption(self):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         assert at.main.caption[0].value == "Valencia Operations, Close 2026-06"
         assert not [m.value for m in at.markdown if "Valencia Operations" in m.value
                     and m.value.startswith("#")]
@@ -2233,7 +2233,7 @@ class TestStep5Look:
             assert page.title[1:] == page.title[1:].lower()
 
     def test_v5_example_tab_first_and_no_open_example_flag(self):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         assert [t.label for t in at.tabs] == ["View a worked example", "Run it yourself"]
         tab_sets = _blocks_of_type(at.main, "tab_container")
         assert len(tab_sets) == 1
@@ -2244,7 +2244,7 @@ class TestStep5Look:
         app = APP_HOME.parent
         for source in app.rglob("*.py"):
             assert "_open_example" not in source.read_text(encoding="utf-8"), source
-        page = (app / "pages" / "close_scan.py").read_text(encoding="utf-8")
+        page = (app / "views" / "close_scan.py").read_text(encoding="utf-8")
         call = page[page.index("st.tabs("):]
         assert "default=" not in call[:call.index(")")]
 
@@ -2269,7 +2269,7 @@ class TestStep5TabsAtTheTop:
     (V5 points 3 and 4)."""
 
     def test_v5_tab_bar_directly_under_the_banner(self):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         kinds = [getattr(c, "type", None) for c in at.main.children.values()]
         assert kinds[:4] == ["markdown", "markdown", "caption", "tab_container"]
         example, live = at.tabs
@@ -2289,7 +2289,7 @@ class TestStep5TabsAtTheTop:
                    lambda api_key=None, **kw: _ReplyingClient(reply)):
             at = _app_test()
             at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
-            at.switch_page("pages/close_scan.py").run()
+            at.switch_page("views/close_scan.py").run()
             place = _tab_place(at)
             assert place[0] == 3 and place[1].endswith("-cs_triage_tabs")
             at.select_slider(key="mat_level").set_value("High").run()
@@ -2308,7 +2308,7 @@ class TestStep5TabsAtTheTop:
         assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
 
     def test_v5_example_tab_names_where_the_controls_are(self):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         at.select_slider(key="mat_level").set_value("High").run()
         assert [i.value for i in at.tabs[0].info] == [
             "The captured triage was produced at the default sensitivity. "
@@ -2382,7 +2382,7 @@ def _triaged(vol=None):
     another volatility sensitivity."""
     at = _app_test()
     at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
-    at.switch_page("pages/close_scan.py").run()
+    at.switch_page("views/close_scan.py").run()
     if vol:
         at.select_slider(key="vol_level").set_value(vol).run()
     at.button(key="run_triage").click().run()
@@ -2429,7 +2429,7 @@ class TestStep5bSignOff:
     after the live triage and its downloads, before the session audit."""
 
     def test_5b_no_section_without_a_triage(self, stand_in):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         assert "#### Sign-off" not in [m.value for m in at.markdown]
         at.sidebar.text_input(key="byo_api_key").input(TEST_KEY).run()
         assert [b.key for b in at.button] == ["run_triage"]
@@ -2637,7 +2637,7 @@ class TestStep5bSignOff:
         assert _audit_rows(at)[0]["signed_off_by"] == signed.name
 
     def test_5b_outstanding_lines_use_the_tables_words(self):
-        at = _page("pages/close_scan.py")
+        at = _page("views/close_scan.py")
         at.select_slider(key="mat_level").set_value("High").run()
         at.select_slider(key="vol_level").set_value("High").run()
         table = next(d.value for d in at.dataframe if "Reason" in d.value.columns)
@@ -2684,7 +2684,7 @@ class TestStep5bSignOff:
         assert promise.splitlines()[-1] == (
             "- **The reviewer signs.** Nothing is final until a named reviewer reads "
             "it and signs.")
-        built = " ".join(m.value for m in _page("pages/how_its_built.py").markdown)
+        built = " ".join(m.value for m in _page("views/how_its_built.py").markdown)
         assert ("This live demo stops at a typed sign-off kept for the session: a "
                 "named reviewer types SIGN, and the PDF turns from DRAFT to FINAL. It "
                 "still does not store or lock anything, so no data is retained.") in built
@@ -2698,3 +2698,54 @@ class TestStep5bSignOff:
         lifecycle = (root / "streamlit_app" / "lib" / "governance_lifecycle.py").read_text(
             encoding="utf-8")
         assert "YOU APPROVE" in lifecycle
+
+
+# =============================================================================
+# Step 6a: the page files in views/, every address pinned
+# =============================================================================
+
+# Every page address on main before Step 6a (96f0adb), as the sidebar links
+# them: Home is the root, and these four are published in posts and READMEs.
+PINNED_ADDRESSES = ["how_it_works", "close_scan", "your_own_data", "how_its_built"]
+
+
+def _declared_pages():
+    """The argument for each st.Page that Home declares, in order: a view
+    file's name or Home's function, and the keywords it passes."""
+    import streamlit as st
+    declared = []
+    real_page = st.Page
+
+    def spy_page(page, **kwargs):
+        declared.append((getattr(page, "__name__", Path(str(page)).name), kwargs))
+        return real_page(page, **kwargs)
+
+    with patch("streamlit.Page", spy_page):
+        at = _app_test()
+    assert not at.exception
+    return declared
+
+
+class TestStep6Views:
+    """A folder named pages/ beside Home.py switches on Streamlit's older
+    multipage mode, which can run a page requested first without Home (file
+    names in the sidebar). The views live in views/, and each address is
+    pinned, so moving or renaming a file cannot move a published link."""
+
+    def test_6a_no_folder_named_pages(self):
+        app = APP_HOME.parent
+        assert [p for p in app.rglob("pages") if p.is_dir()] == []
+        assert sorted(p.name for p in (app / "views").glob("*.py")) == [
+            "close_scan.py", "how_it_works.py", "how_its_built.py", "your_own_data.py"]
+
+    def test_6a_every_address_is_pinned(self):
+        declared = _declared_pages()
+        assert [(name, kwargs.get("url_path")) for name, kwargs in declared] == [
+            ("how_it_works.py", "how_it_works"),
+            ("close_scan.py", "close_scan"),
+            ("your_own_data.py", "your_own_data"),
+            ("how_its_built.py", "how_its_built"),
+            ("_home_page", None),
+        ]
+        pages, _ = _navigation()
+        assert [p.url_path for p in pages] == [""] + PINNED_ADDRESSES
