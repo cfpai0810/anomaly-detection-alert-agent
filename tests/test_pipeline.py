@@ -1840,8 +1840,9 @@ class TestPdfText:
         at = _close_scan_after_run(_reply_from_capture(triage))
         assert not at.exception
         assert [e.value for e in at.error] == []
-        # Since Step 5b the review PDF is a DRAFT until a reviewer signs it.
-        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
+        # Since Step 5b the review PDF is a DRAFT until a reviewer signs it;
+        # since Step 6b it sits in the Sign-off section, after the CSV.
+        assert _download_labels(at) == ["Download anomalies CSV", "Download the DRAFT PDF"]
 
     def test_item35_close_scan_pdf_failure_keeps_csv(self):
         """If the PDF cannot be built, a plain message shows and the CSV still
@@ -2305,7 +2306,7 @@ class TestStep5TabsAtTheTop:
             at.button(key="run_triage").click().run()
         assert not at.exception
         assert _tab_place(at) == place
-        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
+        assert _download_labels(at) == ["Download anomalies CSV", "Download the DRAFT PDF"]
 
     def test_v5_example_tab_names_where_the_controls_are(self):
         at = _page("views/close_scan.py")
@@ -2458,7 +2459,7 @@ class TestStep5bSignOff:
         assert not button.disabled
         captions = [c.value for c in live.caption]
         assert captions.count(SCOPE_NOTE) == 1 and STALE_CAPTION not in captions
-        assert _download_labels(at) == ["Download the DRAFT PDF", "Download anomalies CSV"]
+        assert _download_labels(at) == ["Download anomalies CSV", "Download the DRAFT PDF"]
         draft = _extract_pdf_text(downloads(at, "Download the DRAFT PDF")).splitlines()
         assert draft[0] == "MONTH-END CLOSE ANOMALY REVIEW"
         assert draft[2].startswith("Generated ")
@@ -2473,7 +2474,7 @@ class TestStep5bSignOff:
             assert _signoff_section(at)[2] == _DRAFT_CHIP
             assert "cs_signed_off" not in at.session_state
             assert "status" not in _audit_rows(at)[0]
-            assert _download_labels(at)[0] == "Download the DRAFT PDF"
+            assert _download_labels(at)[-1] == "Download the DRAFT PDF"
 
         # Signed: FINAL, the signed line, read only, the FINAL PDF
         _sign(at, "José Núñez", " SIGN ")
@@ -2485,7 +2486,7 @@ class TestStep5bSignOff:
         assert not at.tabs[1].warning
         assert not _boxes(at) and not _signoff_buttons(at)
         assert [c.value for c in at.tabs[1].caption].count(SCOPE_NOTE) == 1
-        assert _download_labels(at) == ["Download the FINAL PDF", "Download anomalies CSV"]
+        assert _download_labels(at) == ["Download anomalies CSV", "Download the FINAL PDF"]
         final = _extract_pdf_text(downloads(at, "Download the FINAL PDF")).splitlines()
         assert final[3:5] == ["FINAL: signed off by José Núñez on {}".format(when),
                               "AI TRIAGE ASSESSMENT"]
@@ -2613,7 +2614,7 @@ class TestStep5bSignOff:
             "sk-ant-api03-" + "y" * 90).run()
         assert not at.exception
         assert _signoff_section(at)[2].startswith(_FINAL_CHIP)
-        assert _download_labels(at)[0] == "Download the FINAL PDF"
+        assert _download_labels(at)[-1] == "Download the FINAL PDF"
         at.button(key="run_triage").click().run()
         assert _signoff_section(at)[2] == _DRAFT_CHIP
         assert _boxes(at) == [("cs_reviewer", "José Núñez"), ("cs_sign", "")]
@@ -2749,3 +2750,159 @@ class TestStep6Views:
         ]
         pages, _ = _navigation()
         assert [p.url_path for p in pages] == [""] + PINNED_ADDRESSES
+
+
+# =============================================================================
+# Step 6b: the PDF button inside the Sign-off section, its file name in UTC
+# =============================================================================
+
+from streamlit.testing.v1.element_tree import Block
+
+_TEXT_TYPES = ("markdown", "caption", "divider", "error", "warning", "info", "success")
+_PDF_FAILED = ("The review PDF could not be built. Something went wrong running "
+               "that request. Please try again.")
+
+
+def _flow(block):
+    """Everything under a block in the order the page draws it, as (type,
+    text): the text of a markdown, a caption or a message, or a widget's
+    label."""
+    out = []
+    for index in sorted(block.children):
+        node = block.children[index]
+        if isinstance(node, Block):
+            out += _flow(node)
+        elif node.type in _TEXT_TYPES:
+            out.append((node.type, node.value))
+        else:
+            out.append((node.type, getattr(node, "label", None)))
+    return out
+
+
+def _flow_split(at):
+    """Run it yourself as drawn: what comes before the Sign-off heading, and
+    the section from its heading on (the section closes the tab)."""
+    flow = _flow(at.tabs[1])
+    start = flow.index(("markdown", "#### Sign-off"))
+    return flow[:start], flow[start:]
+
+
+def _draft_top(flags=_DEFAULT_FLAGS):
+    """A DRAFT section down to its Sign off button."""
+    return [("markdown", "#### Sign-off"), ("markdown", _SIGN_MEANS),
+            ("markdown", _DRAFT_CHIP), ("markdown", "Outstanding before you sign:"),
+            ("markdown", "\n".join("{}. {}".format(i, line)
+                                   for i, line in enumerate(flags, start=1))),
+            ("text_input", "Reviewer name"), ("text_input", WORD_LABEL),
+            ("button", "Sign off")]
+
+
+class TestStep6bSignOffPdf:
+    """The review PDF downloads from inside the Sign-off section, in Project
+    4's order, and its label follows the sign-off; the anomalies CSV stays in
+    the downloads row above it (6b1). The PDF's file name is stamped in UTC,
+    as the signed line is (6b2)."""
+
+    def test_6b1_pdf_button_in_signoff_follows_the_state(self, stand_in):
+        at = _triaged(vol="Low")
+        before, section = _flow_split(at)
+        # The CSV stays in the downloads row: after the triage, before the section.
+        assert [t for k, t in before if k == "download_button"] == ["Download anomalies CSV"]
+        assert before[-2:] == [("download_button", "Download anomalies CSV"),
+                               ("markdown", "---")]
+        # DRAFT: chip, outstanding list, Reviewer name, Type SIGN, Sign off,
+        # the scope note, then the PDF
+        assert section == _draft_top(_LOW_VOL_FLAGS) + [
+            ("caption", SCOPE_NOTE), ("download_button", "Download the DRAFT PDF")]
+
+        # A refusal comes after the scope note, before the PDF.
+        _sign(at, "A. Reviewer", "sign")
+        assert _flow_split(at)[1] == _draft_top(_LOW_VOL_FLAGS) + [
+            ("caption", SCOPE_NOTE), ("warning", WORD_REFUSAL),
+            ("download_button", "Download the DRAFT PDF")]
+
+        # FINAL: the chip and signed line, the PDF, then the scope note
+        _sign(at, "A. Reviewer")
+        signed = at.session_state["cs_signed_off"]
+        result = at.session_state["cs_signed_for"]
+        final_line = ("markdown", "{}&nbsp; {}".format(_FINAL_CHIP, signed.line))
+        before, section = _flow_split(at)
+        assert [t for k, t in before if k == "download_button"] == ["Download anomalies CSV"]
+        assert section == [
+            ("markdown", "#### Sign-off"), ("markdown", _SIGN_MEANS), final_line,
+            ("download_button", "Download the FINAL PDF"), ("caption", SCOPE_NOTE)]
+
+        # Stale: a DRAFT again, its caption before the scope note, then the PDF
+        at.select_slider(key="vol_level").set_value("Very low").run()
+        assert _flow_split(at)[1] == _draft_top(_LOW_VOL_FLAGS) + [
+            ("caption", STALE_CAPTION), ("caption", SCOPE_NOTE),
+            ("download_button", "Download the DRAFT PDF")]
+
+        # A second sign-off of the same result is refused: the refusal comes
+        # after the signed line, before the PDF (as in test_5b_a_second_signoff).
+        at.select_slider(key="vol_level").set_value("Low").run()
+        at.text_input(key="cs_sign").input("SIGN").run()
+        at.session_state["cs_signed_off"] = signed
+        at.session_state["cs_signed_for"] = result
+        at.button(key="cs_signoff").click().run()
+        assert not at.exception
+        assert _flow_split(at)[1] == [
+            ("markdown", "#### Sign-off"), ("markdown", _SIGN_MEANS), final_line,
+            ("warning", ALREADY_SIGNED), ("download_button", "Download the FINAL PDF"),
+            ("caption", SCOPE_NOTE)]
+
+    def test_6b1_pdf_failure_message_takes_the_buttons_place(self, stand_in):
+        with patch("src.step4_output_writer.build_pdf_bytes",
+                   side_effect=ValueError("paraparser: syntax error")):
+            at = _triaged()
+            before, section = _flow_split(at)
+            assert [t for k, t in before if k == "download_button"] == [
+                "Download anomalies CSV"]
+            assert ("error", _PDF_FAILED) not in before
+            assert section == _draft_top() + [
+                ("caption", SCOPE_NOTE), ("error", _PDF_FAILED)]
+            _sign(at, "A. Reviewer")
+            assert _flow_split(at)[1][3:] == [("error", _PDF_FAILED),
+                                              ("caption", SCOPE_NOTE)]
+
+    def test_6b2_pdf_file_name_in_utc(self, stand_in, monkeypatch):
+        import datetime as clock
+        from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+
+        moment = clock.datetime(2026, 10, 29, 21, 30, 5, tzinfo=clock.timezone.utc)
+
+        class ServerClock(clock.datetime):
+            """The clock fixed at 21:30:05 UTC on 29 October 2026, on a server
+            whose own zone is UTC+10, where it is 07:30:05 on the 30th."""
+
+            @classmethod
+            def now(cls, tz=None):
+                if tz is None:
+                    return moment.astimezone(
+                        clock.timezone(clock.timedelta(hours=10))).replace(tzinfo=None)
+                return moment.astimezone(tz)
+
+        names = {}
+        load = MemoryMediaFileStorage.load_and_get_id
+
+        def _load(self, data, mimetype, kind, filename=None):
+            file_id = load(self, data, mimetype, kind, filename)
+            names[file_id] = filename
+            return file_id
+
+        at = _triaged()
+        # One more run of the page on the fixed clock: the page reads the
+        # time as it draws the downloads. Every module it imports is loaded
+        # by now, so only the page's own import sees the fixed clock.
+        monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", _load)
+        with monkeypatch.context() as fixed:
+            fixed.setattr(clock, "datetime", ServerClock)
+            at.run()
+        assert not at.exception
+        files = {d.proto.label: names[d.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+                 for d in at.get("download_button")}
+        # The CSV shares the stamp, so it is in UTC too.
+        assert files == {
+            "Download anomalies CSV": "anomalies_2026-10-29_21-30-05.csv",
+            "Download the DRAFT PDF": "close_review_2026-10-29_21-30-05.pdf",
+        }

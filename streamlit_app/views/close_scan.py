@@ -12,7 +12,7 @@ import hashlib
 import html
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -573,10 +573,27 @@ def _sign_off(run, result, outstanding):
     sign_run(run, signed, outstanding)
 
 
-def _render_signoff(run, result, signed, stale, outstanding):
+def _download_pdf(signed, pdf, pdf_error, file_name):
+    """The review PDF: the DRAFT PDF, or the FINAL PDF once signed. If it
+    could not be built, its plain message shows in its place."""
+    if pdf is None:
+        st.error("The review PDF could not be built. {}".format(pdf_error))
+        return
+    st.download_button(
+        label=("Download the FINAL PDF" if signed is not None
+               else "Download the DRAFT PDF"),
+        data=pdf,
+        file_name=file_name,
+        mime="application/pdf",
+    )
+
+
+def _render_signoff(run, result, signed, stale, outstanding, *, pdf,
+                    pdf_error, pdf_name):
     """The Sign-off section: DRAFT with the boxes and the button, or FINAL
-    and read only. Stale (the thresholds on screen are not those the triage
-    was run at) keeps the button disabled."""
+    and read only, each with its PDF in Project 4's order. Stale (the
+    thresholds on screen are not those the triage was run at) keeps the
+    button disabled."""
     ss = st.session_state
     refusal = ss.pop(_REFUSAL_KEY, None)
 
@@ -590,6 +607,7 @@ def _render_signoff(run, result, signed, stale, outstanding):
             unsafe_allow_html=True)
         if refusal:
             st.warning(refusal)
+        _download_pdf(signed, pdf, pdf_error, pdf_name)
         st.caption(SCOPE_NOTE)
         return
 
@@ -611,6 +629,7 @@ def _render_signoff(run, result, signed, stale, outstanding):
     st.caption(SCOPE_NOTE)
     if refusal:
         st.warning(refusal)
+    _download_pdf(None, pdf, pdf_error, pdf_name)
 
 
 # =============================================================================
@@ -738,9 +757,10 @@ with tab_live:
             _stale = state["thresholds"] != _thresholds
 
             _dl_triage = list(state["matched"].values())
-            _dl_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            # A PDF that fails to build shows a plain message; the CSV still
-            # downloads.
+            # In UTC, as the signed line is, whatever the server's own zone
+            _dl_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+            # A PDF that fails to build shows a plain message in the Sign-off
+            # section; the CSV still downloads.
             _dl_pdf_error = None
             try:
                 _dl_pdf = build_pdf_bytes(
@@ -752,29 +772,18 @@ with tab_live:
                 _dl_pdf = None
                 _dl_pdf_error = friendly_message(exc)
             _dl_csv = build_csv_bytes(flagged, _dl_triage)
-            col_pdf, col_csv = st.columns(2)
-            with col_pdf:
-                if _dl_pdf is None:
-                    st.error("The review PDF could not be built. {}".format(
-                        _dl_pdf_error))
-                else:
-                    st.download_button(
-                        label=("Download the FINAL PDF" if _signed
-                               else "Download the DRAFT PDF"),
-                        data=_dl_pdf,
-                        file_name="close_review_{}.pdf".format(_dl_ts),
-                        mime="application/pdf",
-                    )
-            with col_csv:
-                st.download_button(
-                    label="Download anomalies CSV",
-                    data=_dl_csv,
-                    file_name="anomalies_{}.csv".format(_dl_ts),
-                    mime="text/csv",
-                )
+            # The data stays a plain download; the review PDF is in Sign-off.
+            st.download_button(
+                label="Download anomalies CSV",
+                data=_dl_csv,
+                file_name="anomalies_{}.csv".format(_dl_ts),
+                mime="text/csv",
+            )
 
             _render_signoff(state["run"], _result, _signed, _stale,
-                            outstanding_lines(flagged))
+                            outstanding_lines(flagged), pdf=_dl_pdf,
+                            pdf_error=_dl_pdf_error,
+                            pdf_name="close_review_{}.pdf".format(_dl_ts))
 
 with tab_example:
     if fingerprint == example["fingerprint"]:
