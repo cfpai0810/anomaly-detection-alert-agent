@@ -21,20 +21,25 @@ ENGINE_BG = "#E8F3E9"
 PERSON_BG = LIGHT_BLUE
 
 
-def _box(x, w, stroke, bg, title, l1, l2, foot, foot_color):
-    """One stage box with a title, two content lines, and an ownership foot."""
+def _box(x, w, stroke, bg, title, l1, l2, foot, foot_color, l3=None):
+    """One stage box with a title, two content lines (three when l3 is
+    given), and an ownership foot."""
     cx = x + w / 2
+    # Two lines sit at 124 and 141. Three keep the same 17 between lines and
+    # move up 4, to 120, 137 and 154, so they stay centred between the title
+    # and the foot.
+    rows = (((124, l1), (141, l2)) if l3 is None
+            else ((120, l1), (137, l2), (154, l3)))
+    lines = "".join(f"""
+    <text x="{cx}" y="{y}" text-anchor="middle" font-family="'Inter', sans-serif"
+          font-size="11.5" fill="{DARK_BLUE}">{line}</text>""" for y, line in rows)
     return f"""
   <g>
     <rect x="{x}" y="66" width="{w}" height="128" rx="12"
           fill="{bg}" stroke="{stroke}" stroke-width="1.1"/>
     <text x="{cx}" y="96" text-anchor="middle" font-family="'Inter', sans-serif"
           font-size="12" font-weight="700" fill="{stroke}"
-          letter-spacing="0.03em">{title}</text>
-    <text x="{cx}" y="124" text-anchor="middle" font-family="'Inter', sans-serif"
-          font-size="11.5" fill="{DARK_BLUE}">{l1}</text>
-    <text x="{cx}" y="141" text-anchor="middle" font-family="'Inter', sans-serif"
-          font-size="11.5" fill="{DARK_BLUE}">{l2}</text>
+          letter-spacing="0.03em">{title}</text>{lines}
     <text x="{cx}" y="176" text-anchor="middle" font-family="'Inter', sans-serif"
           font-size="10" font-style="italic" fill="{foot_color}">{foot}</text>
   </g>"""
@@ -60,8 +65,9 @@ def governance_flow_svg():
         _box(584, 170, MODEL, MODEL_BG, "THE MODEL TRIAGES",
              "Explains each flag,", "suggests a cause", "words, not numbers", MODEL) +
         _arrow(754) +
-        _box(782, 124, PERSON, PERSON_BG, "YOU REVIEW",
-             "You judge every", "flagged account", "the person", PERSON)
+        _box(782, 124, PERSON, PERSON_BG, "YOU SIGN OFF",
+             "You judge every", "flagged account,", "the person", PERSON,
+             l3="then sign off")
     )
 
     return f"""
@@ -70,7 +76,7 @@ def governance_flow_svg():
      aria-label="How a run is governed: you load the month-end close, Python
      runs the materiality and z-score tests, accounts that breach the
      thresholds are flagged by rule, the model triages the flagged set, and
-     you review every flagged account.">
+     you review every flagged account, then sign off.">
   <defs>
     <marker id="gv-arrow" viewBox="0 0 10 10" refX="8" refY="5"
             markerWidth="7" markerHeight="7" orient="auto-start-reverse">

@@ -2906,3 +2906,52 @@ class TestStep6bSignOffPdf:
             "Download anomalies CSV": "anomalies_2026-10-29_21-30-05.csv",
             "Download the DRAFT PDF": "close_review_2026-10-29_21-30-05.pdf",
         }
+
+
+# =============================================================================
+# Step 6 wording: the governance flow ends at YOU SIGN OFF
+# =============================================================================
+
+import xml.etree.ElementTree as ET
+
+from streamlit_app.lib.governance_flow import governance_flow_svg
+from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
+
+_SVG = "{http://www.w3.org/2000/svg}"
+
+
+def _diagram(svg):
+    """A diagram's accessible name, its line breaks read as spaces, and the
+    lines of each stage box in order: title, content lines, foot."""
+    root = ET.fromstring(svg.strip())
+    boxes = []
+    for group in root.iter(_SVG + "g"):
+        rect = group.find(_SVG + "rect")
+        if rect is not None and rect.get("height") == "128":
+            boxes.append([t.text for t in group.findall(_SVG + "text")])
+    return " ".join(root.get("aria-label").split()), boxes
+
+
+class TestStep6Wording:
+    """The governance flow ends where Projects 2 and 4 end it, at YOU SIGN
+    OFF: you judge every flagged account, then sign off. The lifecycle still
+    starts at YOU REVIEW, before YOU APPROVE."""
+
+    def test_6_governance_flow_ends_at_you_sign_off(self):
+        svg = governance_flow_svg()
+        name, boxes = _diagram(svg)
+        assert [box[0] for box in boxes] == [
+            "YOU LOAD THE CLOSE", "PYTHON DETECTS", "FLAGGED BY RULE",
+            "THE MODEL TRIAGES", "YOU SIGN OFF"]
+        _, *words, foot = boxes[-1]
+        assert " ".join(words) == "You judge every flagged account, then sign off"
+        assert foot == "the person"
+        assert "YOU REVIEW" not in svg
+        assert name == (
+            "How a run is governed: you load the month-end close, Python runs the "
+            "materiality and z-score tests, accounts that breach the thresholds are "
+            "flagged by rule, the model triages the flagged set, and you review every "
+            "flagged account, then sign off.")
+        assert name.endswith("then sign off.")
+        _, lifecycle = _diagram(governance_lifecycle_svg())
+        assert [box[0] for box in lifecycle[:2]] == ["YOU REVIEW", "YOU APPROVE"]
