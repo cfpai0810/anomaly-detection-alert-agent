@@ -58,9 +58,9 @@ st.write(
     "volatility tests against the thresholds you set and flags the "
     "outliers; the model reads the flagged accounts and triages each one "
     "with a priority, an assessment, and a hypothesis; and you review "
-    "every flagged account. The model never sees the unflagged accounts, "
-    "never decides what is suspicious, and cannot remove a flag or "
-    "suppress an account from the review.")
+    "every flagged account, then sign off. The model never sees the "
+    "unflagged accounts, never decides what is suspicious, and cannot "
+    "remove a flag or suppress an account from the review.")
 
 st.markdown("**Anything the data cannot support is flagged, not explained away.**")
 st.write(
@@ -82,8 +82,9 @@ st.write(
 st.info(
     "In one line: the model reads the flagged accounts and writes the "
     "triage; Python detects every anomaly and flags what needs a human; "
-    "you review what is flagged. The intelligence is at the edges, and "
-    "the detection in the middle is deterministic and checkable.")
+    "you review what is flagged, then sign off. The intelligence is at "
+    "the edges, and the detection in the middle is deterministic and "
+    "checkable.")
 
 st.markdown("#### The governance lifecycle")
 components.html(governance_lifecycle_svg(), height=310, scrolling=False)

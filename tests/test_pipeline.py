@@ -2955,3 +2955,24 @@ class TestStep6Wording:
         assert name.endswith("then sign off.")
         _, lifecycle = _diagram(governance_lifecycle_svg())
         assert [box[0] for box in lifecycle[:2]] == ["YOU REVIEW", "YOU APPROVE"]
+
+    def test_6_the_prose_under_the_flow_ends_at_the_sign_off(self):
+        # The paragraph under the governance flow and the In one line note
+        # describe the flow, which ends at YOU SIGN OFF: the prose says the
+        # same, as the page renders it
+        at = _page("views/how_its_built.py")
+        (paragraph,) = [m.value for m in at.main.markdown
+                        if m.value.startswith("You load the month-end close;")]
+        (line,) = [i.value for i in at.info if i.value.startswith("In one line:")]
+        assert [paragraph, line] == [
+            "You load the month-end close; Python runs the materiality and "
+            "volatility tests against the thresholds you set and flags the "
+            "outliers; the model reads the flagged accounts and triages each one "
+            "with a priority, an assessment, and a hypothesis; and you review "
+            "every flagged account, then sign off. The model never sees the "
+            "unflagged accounts, never decides what is suspicious, and cannot "
+            "remove a flag or suppress an account from the review.",
+            "In one line: the model reads the flagged accounts and writes the "
+            "triage; Python detects every anomaly and flags what needs a human; "
+            "you review what is flagged, then sign off. The intelligence is at the "
+            "edges, and the detection in the middle is deterministic and checkable."]
