@@ -10,6 +10,8 @@
 # line up). Both are free Google Fonts, loaded by CSS import.
 # =============================================================================
 
+from streamlit_app.lib.flow_diagram import flow_css
+
 # Core palette — identical to the PDF (step4_output_writer.py)
 DARK_BLUE  = "#1A3A5C"
 MID_BLUE   = "#2D6A9F"
@@ -176,6 +178,7 @@ def inject_css():
         text-align: center;
         margin: 8px 0;
       }}
+{flow_css(DARK_BLUE, MUTED, RULE)}
     </style>
     """
 

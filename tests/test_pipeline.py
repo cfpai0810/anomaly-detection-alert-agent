@@ -2912,24 +2912,45 @@ class TestStep6bSignOffPdf:
 # Step 6 wording: the governance flow ends at YOU SIGN OFF
 # =============================================================================
 
-import xml.etree.ElementTree as ET
-
-from streamlit_app.lib.governance_flow import governance_flow_svg
-from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
-
-_SVG = "{http://www.w3.org/2000/svg}"
+from html.parser import HTMLParser
 
 
-def _diagram(svg):
-    """A diagram's accessible name, its line breaks read as spaces, and the
-    lines of each stage box in order: title, content lines, foot."""
-    root = ET.fromstring(svg.strip())
-    boxes = []
-    for group in root.iter(_SVG + "g"):
-        rect = group.find(_SVG + "rect")
-        if rect is not None and rect.get("height") == "128":
-            boxes.append([t.text for t in group.findall(_SVG + "text")])
-    return " ".join(root.get("aria-label").split()), boxes
+class _Diagram(HTMLParser):
+    """One flow diagram's HTML (lib/flow_diagram.py) read back: the list's
+    accessible name, the heading, the note, the colour key, and each stage's
+    parts by class, with its box colours."""
+
+    def __init__(self, markup):
+        super().__init__()
+        self.label, self.head, self.note, self.key, self.stages = None, None, None, [], []
+        self._open = []
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = (attrs.get("class") or "").split()
+        if tag == "ol" and "fd-flow" in classes:
+            self.label = attrs.get("aria-label")
+        if tag == "li" and "fd-stage" in classes:
+            self.stages.append({"cross": "fd-cross" in classes,
+                                "style": attrs.get("style")})
+        self._open.append(classes)
+
+    def handle_endtag(self, tag):
+        self._open.pop()
+
+    def handle_data(self, data):
+        words, classes = data.strip(), self._open[-1] if self._open else []
+        if not words:
+            return
+        if ["fd-key"] in self._open:
+            self.key.append(words)
+        elif "fd-head" in classes:
+            self.head = words
+        elif "fd-note" in classes:
+            self.note = words
+        elif classes and classes[0] in ("fd-zone", "fd-title", "fd-text", "fd-foot"):
+            self.stages[-1][classes[0]] = words
 
 
 class TestStep6Wording:
@@ -2938,23 +2959,26 @@ class TestStep6Wording:
     starts at YOU REVIEW, before YOU APPROVE."""
 
     def test_6_governance_flow_ends_at_you_sign_off(self):
-        svg = governance_flow_svg()
-        name, boxes = _diagram(svg)
-        assert [box[0] for box in boxes] == [
+        from streamlit_app.lib.governance_flow import governance_flow_html
+        from streamlit_app.lib.governance_lifecycle import governance_lifecycle_html
+        markup = governance_flow_html()
+        flow = _Diagram(markup)
+        assert [s["fd-title"] for s in flow.stages] == [
             "YOU LOAD THE CLOSE", "PYTHON DETECTS", "FLAGGED BY RULE",
             "THE MODEL TRIAGES", "YOU SIGN OFF"]
-        _, *words, foot = boxes[-1]
-        assert " ".join(words) == "You judge every flagged account, then sign off"
-        assert foot == "the person"
-        assert "YOU REVIEW" not in svg
-        assert name == (
+        assert flow.stages[-1]["fd-text"] == (
+            "You judge every flagged account, then sign off")
+        assert flow.stages[-1]["fd-foot"] == "the person"
+        assert "YOU REVIEW" not in markup
+        assert flow.label == (
             "How a run is governed: you load the month-end close, Python runs the "
             "materiality and z-score tests, accounts that breach the thresholds are "
             "flagged by rule, the model triages the flagged set, and you review every "
             "flagged account, then sign off.")
-        assert name.endswith("then sign off.")
-        _, lifecycle = _diagram(governance_lifecycle_svg())
-        assert [box[0] for box in lifecycle[:2]] == ["YOU REVIEW", "YOU APPROVE"]
+        assert flow.label.endswith("then sign off.")
+        lifecycle = _Diagram(governance_lifecycle_html())
+        assert [s["fd-title"] for s in lifecycle.stages[:2]] == [
+            "YOU REVIEW", "YOU APPROVE"]
 
     def test_6_the_prose_under_the_flow_ends_at_the_sign_off(self):
         # The paragraph under the governance flow and the In one line note
@@ -2976,3 +3000,166 @@ class TestStep6Wording:
             "triage; Python detects every anomaly and flags what needs a human; "
             "you review what is flagged, then sign off. The intelligence is at the "
             "edges, and the detection in the middle is deterministic and checkable."]
+
+
+# =============================================================================
+# Step 6c: the How it's built diagrams, readable on a phone
+# =============================================================================
+# The three diagrams were SVG in fixed-height frames (the pipeline drawn inline
+# in the page), so on a phone their text shrank to about 4 px and a blank gap
+# followed. They are now HTML lists drawn by lib/flow_diagram.py: a row of
+# boxes from 640 px, stacked below that. These tests read the page as AppTest
+# renders it and check each diagram's words, its accessible name, the order of
+# its stages and each box's colours (the stroke and fill the SVG had).
+
+GOVERNANCE_FLOW = {
+    "label": "How a run is governed: you load the month-end close, Python runs the "
+             "materiality and z-score tests, accounts that breach the thresholds are "
+             "flagged by rule, the model triages the flagged set, and you review every "
+             "flagged account, then sign off.",
+    "head": "You open and close every run. The tests and the model work only in "
+            "between.",
+    "stages": [
+        ("YOU LOAD THE CLOSE", "A month-end close and its history", "the person"),
+        ("PYTHON DETECTS", "Materiality and z-score tests", "no model here"),
+        ("FLAGGED BY RULE", "Thresholds you set mark the outliers", "no model here"),
+        ("THE MODEL TRIAGES", "Explains each flag, suggests a cause",
+         "words, not numbers"),
+        ("YOU SIGN OFF", "You judge every flagged account, then sign off",
+         "the person"),
+    ],
+    "colours": [("#1A3A5C", "#EAF2FB"), ("#1D6B0F", "#E8F3E9"), ("#1D6B0F", "#E8F3E9"),
+                ("#6B4FA8", "#F0ECF8"), ("#1A3A5C", "#EAF2FB")],
+    "note": "Every run is written to the audit record, with the thresholds used and "
+            "a hash of the data, so it can be traced and reproduced.",
+    "key": ["You", "The model, for language", "Deterministic code, for numbers"],
+}
+LIFECYCLE = {
+    "label": "The governance lifecycle: you review the flagged output, approve the "
+             "report, the approved version is locked and becomes immutable, everyone "
+             "reads the locked record, and a change requires a new separately "
+             "approved version.",
+    "head": "Review is the start of the record, not the end.",
+    "stages": [
+        ("YOU REVIEW", "Check the flagged output and data", "the person"),
+        ("YOU APPROVE", "Sign off the report as final", "the person"),
+        ("LOCKED", "The approved report becomes immutable", "the record"),
+        ("READ ONLY", "Everyone reads it, no one edits it", "the record"),
+        ("RE-ISSUE", "A new version; the original still stands", "the person"),
+    ],
+    "colours": [("#1A3A5C", "#EAF2FB"), ("#1A3A5C", "#EAF2FB"), ("#2D6A9F", "#E6F1FB"),
+                ("#2D6A9F", "#E6F1FB"), ("#1A3A5C", "#EAF2FB")],
+    "note": "The live demo stops at a typed sign-off. The stages beyond show the "
+            "production model this design is built towards.",
+    "key": ["You", "The immutable record"],
+}
+# The pipeline had no accessible name, heading, note or key. Its name is new,
+# in the diagram's and the caption's own words; the three labels that sat
+# above Detect, Review flags and Triage are now those boxes' foot lines.
+PIPELINE = {
+    "label": "The pipeline: load the data files; detect, in Python, deterministic, "
+             "free and instant; review flags, a human decision, where you decide to "
+             "proceed; triage, by AI on request, which costs tokens; and output the "
+             "PDF, CSV and audit. The human gate between detection and triage is "
+             "deliberate: the controller reviews the flags before choosing to invoke "
+             "the AI.",
+    "head": None,
+    "stages": [
+        ("Load", "data files", None),
+        ("Detect", "Python, deterministic", "free, instant"),
+        ("Review flags", "human decision", "you decide to proceed"),
+        ("Triage", "AI, on request", "costs tokens"),
+        ("Output", "PDF, CSV, audit", None),
+    ],
+    "colours": [("#2D6A9F", "#EAF2FB"), ("#2D6A9F", "#EAF2FB"), ("#854F0B", "#FAEEDA"),
+                ("#1D6B0F", "#EAF3DE"), ("#2D6A9F", "#EAF2FB")],
+    "note": None,
+    "key": [],
+}
+
+
+@pytest.fixture(scope="class")
+def how_its_built():
+    """The How it's built page as AppTest renders it, and its flow diagrams read
+    back in page order, each with its place among the page's markdown."""
+    at = _page("views/how_its_built.py")
+    flows = [(i, _Diagram(m.value)) for i, m in enumerate(at.main.markdown)
+             if m.value.startswith('<figure class="fd">')]
+    return at, flows
+
+
+def _check_flow(flow, expected):
+    """A diagram has the expected words, its stages in the expected order, and
+    each box in its expected colours."""
+    assert flow.label == expected["label"]
+    assert flow.head == expected["head"]
+    assert [(s["fd-title"], s["fd-text"], s.get("fd-foot")) for s in flow.stages] == \
+        expected["stages"]
+    assert [s["style"] for s in flow.stages] == [
+        f"border-color:{stroke};background:{fill}" for stroke, fill in expected["colours"]]
+    assert flow.note == expected["note"]
+    assert flow.key == expected["key"]
+
+
+class TestStep6cDiagrams:
+
+    def test_6c_diagrams_are_html_lists_not_frames(self, how_its_built):
+        at, flows = how_its_built
+        assert not at.get("iframe"), "no fixed-height frame left on the page"
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        # Each sits where its frame was: just under its lead-in, in page order
+        values = [m.value for m in at.main.markdown]
+        leads = ["**The work happens in separated layers.**",
+                 "#### The governance lifecycle", "**The pipeline.**"]
+        assert [i for i, _ in flows] == [values.index(lead) + 1 for lead in leads]
+        # The CSS is in inject_css: stacked on a phone, a row from 640 px, and
+        # no text in a diagram under 13 px
+        from streamlit_app.lib import flow_diagram
+        flow_css = flow_diagram.flow_css(theme.DARK_BLUE, theme.MUTED, theme.RULE)
+        assert flow_css in inject_css()
+        assert "@media (min-width: 640px)" in flow_css and "ol.fd-flow" in flow_css
+        sizes = [int(s) for s in re.findall(r"font-size: (\d+)px", flow_css)]
+        assert sizes and min(sizes) >= 13
+        # The renderer imports nothing from an app, so it copies byte for byte
+        source = Path(flow_diagram.__file__).read_text(encoding="utf-8")
+        assert "import streamlit_app" not in source and "from streamlit_app" not in source
+        # No SVG and no frame left in the page's source
+        page = (APP_HOME.parent / "views" / "how_its_built.py").read_text(encoding="utf-8")
+        assert "<svg" not in page and "components" not in page
+
+    def test_6c_governance_flow_stages_in_order(self, how_its_built):
+        _, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[0][1]
+        _check_flow(flow, GOVERNANCE_FLOW)
+        assert not any(s["cross"] for s in flow.stages)
+
+    def test_6c_lifecycle_stages_in_order_with_the_demo_boundary(self, how_its_built):
+        _, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[1][1]
+        _check_flow(flow, LIFECYCLE)
+        titles = [s["fd-title"] for s in flow.stages]
+        assert "YOU APPROVE" in titles and "LOCKED" in titles
+        # The live demo ends after YOU REVIEW: the boundary sits just before YOU
+        # APPROVE, with a label for the zone on each side
+        assert [s["cross"] for s in flow.stages] == [False, True, False, False, False]
+        assert [(s.get("fd-zone"), s["fd-title"]) for s in flow.stages[:2]] == [
+            ("Live demo", "YOU REVIEW"), ("Production workflow", "YOU APPROVE")]
+        assert all("fd-zone" not in s for s in flow.stages[2:])
+
+    def test_6c_pipeline_stages_in_order(self, how_its_built):
+        at, flows = how_its_built
+        assert len(flows) == 3, "the three diagrams are HTML lists on the page"
+        flow = flows[2][1]
+        _check_flow(flow, PIPELINE)
+        assert not any(s["cross"] for s in flow.stages)
+        # The model is called in one stage only, just after the human gate
+        titles = [s["fd-title"] for s in flow.stages]
+        assert titles.index("Review flags") + 1 == titles.index("Triage")
+        assert [s["fd-text"] for s in flow.stages].count("AI, on request") == 1
+        # The caption under it keeps its words
+        assert (
+            "The human gate between detection and triage is deliberate: the "
+            "controller reviews the flags before choosing to invoke the AI."
+        ) in [c.value for c in at.main.caption]

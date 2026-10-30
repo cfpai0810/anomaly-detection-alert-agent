@@ -6,110 +6,42 @@
 # flagged set, and the person reviews. Colour encodes WHO OWNS each step: the
 # person (blue), the model for language (purple), the deterministic engine for
 # numbers (green). Two consecutive engine boxes reflect the design: detection
-# and flagging are separate deterministic steps.
+# and flagging are separate deterministic steps. Drawn in HTML by
+# lib/flow_diagram.py, so it reads on a phone.
 # =============================================================================
 
-from streamlit_app.lib.theme import (
-    DARK_BLUE, LIGHT_BLUE, GREEN, MUTED, RULE,
+from streamlit_app.lib.flow_diagram import Role, Stage, flow_html
+from streamlit_app.lib.theme import DARK_BLUE, GREEN, LIGHT_BLUE
+
+PERSON = Role(DARK_BLUE, LIGHT_BLUE)
+MODEL  = Role("#6B4FA8", "#F0ECF8")     # purple: the model handles language, not numbers
+ENGINE = Role(GREEN, "#E8F3E9")
+
+LABEL = ("How a run is governed: you load the month-end close, Python runs the "
+         "materiality and z-score tests, accounts that breach the thresholds are "
+         "flagged by rule, the model triages the flagged set, and you review every "
+         "flagged account, then sign off.")
+
+STAGES = (
+    Stage("YOU LOAD THE CLOSE", "A month-end close and its history", "the person",
+          PERSON),
+    Stage("PYTHON DETECTS", "Materiality and z-score tests", "no model here", ENGINE),
+    Stage("FLAGGED BY RULE", "Thresholds you set mark the outliers", "no model here",
+          ENGINE),
+    Stage("THE MODEL TRIAGES", "Explains each flag, suggests a cause",
+          "words, not numbers", MODEL),
+    Stage("YOU SIGN OFF", "You judge every flagged account, then sign off",
+          "the person", PERSON),
 )
 
-PERSON    = DARK_BLUE
-MODEL     = "#6B4FA8"      # purple: the model handles language, not numbers
-ENGINE    = GREEN
-MODEL_BG  = "#F0ECF8"
-ENGINE_BG = "#E8F3E9"
-PERSON_BG = LIGHT_BLUE
 
-
-def _box(x, w, stroke, bg, title, l1, l2, foot, foot_color, l3=None):
-    """One stage box with a title, two content lines (three when l3 is
-    given), and an ownership foot."""
-    cx = x + w / 2
-    # Two lines sit at 124 and 141. Three keep the same 17 between lines and
-    # move up 4, to 120, 137 and 154, so they stay centred between the title
-    # and the foot.
-    rows = (((124, l1), (141, l2)) if l3 is None
-            else ((120, l1), (137, l2), (154, l3)))
-    lines = "".join(f"""
-    <text x="{cx}" y="{y}" text-anchor="middle" font-family="'Inter', sans-serif"
-          font-size="11.5" fill="{DARK_BLUE}">{line}</text>""" for y, line in rows)
-    return f"""
-  <g>
-    <rect x="{x}" y="66" width="{w}" height="128" rx="12"
-          fill="{bg}" stroke="{stroke}" stroke-width="1.1"/>
-    <text x="{cx}" y="96" text-anchor="middle" font-family="'Inter', sans-serif"
-          font-size="12" font-weight="700" fill="{stroke}"
-          letter-spacing="0.03em">{title}</text>{lines}
-    <text x="{cx}" y="176" text-anchor="middle" font-family="'Inter', sans-serif"
-          font-size="10" font-style="italic" fill="{foot_color}">{foot}</text>
-  </g>"""
-
-
-def _arrow(x):
-    return (f'<line x1="{x}" y1="130" x2="{x+26}" y2="130" stroke="{MUTED}" '
-            f'stroke-width="1.6" marker-end="url(#gv-arrow)"/>')
-
-
-def governance_flow_svg():
-    """Return the governance flow diagram as an inline SVG string."""
-    boxes = (
-        _box(14,  158, PERSON, PERSON_BG, "YOU LOAD THE CLOSE",
-             "A month-end close", "and its history", "the person", PERSON) +
-        _arrow(172) +
-        _box(200, 170, ENGINE, ENGINE_BG, "PYTHON DETECTS",
-             "Materiality and", "z-score tests", "no model here", ENGINE) +
-        _arrow(370) +
-        _box(398, 158, ENGINE, ENGINE_BG, "FLAGGED BY RULE",
-             "Thresholds you set", "mark the outliers", "no model here", ENGINE) +
-        _arrow(556) +
-        _box(584, 170, MODEL, MODEL_BG, "THE MODEL TRIAGES",
-             "Explains each flag,", "suggests a cause", "words, not numbers", MODEL) +
-        _arrow(754) +
-        _box(782, 124, PERSON, PERSON_BG, "YOU SIGN OFF",
-             "You judge every", "flagged account,", "the person", PERSON,
-             l3="then sign off")
-    )
-
-    return f"""
-<svg viewBox="0 0 920 292" width="100%" role="img"
-     xmlns="http://www.w3.org/2000/svg"
-     aria-label="How a run is governed: you load the month-end close, Python
-     runs the materiality and z-score tests, accounts that breach the
-     thresholds are flagged by rule, the model triages the flagged set, and
-     you review every flagged account, then sign off.">
-  <defs>
-    <marker id="gv-arrow" viewBox="0 0 10 10" refX="8" refY="5"
-            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M2 1 L8 5 L2 9" fill="none" stroke="{MUTED}"
-            stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-  </defs>
-
-  <text x="460" y="28" text-anchor="middle" font-family="'Inter', sans-serif"
-        font-size="13.5" font-weight="600" fill="{PERSON}">
-    You open and close every run. The tests and the model work only in between.
-  </text>
-
-  {boxes}
-
-  <line x1="14" y1="228" x2="906" y2="228" stroke="{RULE}"
-        stroke-width="1" stroke-dasharray="3 4"/>
-  <text x="460" y="250" text-anchor="middle" font-family="'Inter', sans-serif"
-        font-size="11" fill="{MUTED}">
-    Every run is written to the audit record, with the thresholds used and a
-    hash of the data, so it can be traced and reproduced.
-  </text>
-
-  <g font-family="'Inter', sans-serif" font-size="11">
-    <rect x="250" y="270" width="11" height="11" rx="2" fill="{PERSON_BG}"
-          stroke="{PERSON}"/>
-    <text x="267" y="279" fill="{DARK_BLUE}">You</text>
-    <rect x="316" y="270" width="11" height="11" rx="2" fill="{MODEL_BG}"
-          stroke="{MODEL}"/>
-    <text x="333" y="279" fill="{DARK_BLUE}">The model, for language</text>
-    <rect x="500" y="270" width="11" height="11" rx="2" fill="{ENGINE_BG}"
-          stroke="{ENGINE}"/>
-    <text x="517" y="279" fill="{DARK_BLUE}">Deterministic code, for numbers</text>
-  </g>
-</svg>
-"""
+def governance_flow_html():
+    """Return the governance flow diagram as HTML for st.markdown."""
+    return flow_html(
+        LABEL, STAGES,
+        heading="You open and close every run. The tests and the model work only "
+                "in between.",
+        note="Every run is written to the audit record, with the thresholds used "
+             "and a hash of the data, so it can be traced and reproduced.",
+        key=((PERSON, "You"), (MODEL, "The model, for language"),
+             (ENGINE, "Deterministic code, for numbers")))

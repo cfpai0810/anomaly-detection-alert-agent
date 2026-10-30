@@ -13,15 +13,15 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from streamlit_app.lib.theme import inject_css, header_html
-from streamlit_app.lib.governance_flow import governance_flow_svg
-from streamlit_app.lib.governance_lifecycle import governance_lifecycle_svg
+from streamlit_app.lib.governance_flow import governance_flow_html
+from streamlit_app.lib.governance_lifecycle import governance_lifecycle_html
+from streamlit_app.lib.pipeline_flow import pipeline_flow_html
 
 st.markdown(inject_css(), unsafe_allow_html=True)
 
@@ -52,7 +52,7 @@ st.write(
     "same flags.")
 
 st.markdown("**The work happens in separated layers.**")
-components.html(governance_flow_svg(), height=300, scrolling=False)
+st.markdown(governance_flow_html(), unsafe_allow_html=True)
 st.write(
     "You load the month-end close; Python runs the materiality and "
     "volatility tests against the thresholds you set and flags the "
@@ -87,7 +87,7 @@ st.info(
     "checkable.")
 
 st.markdown("#### The governance lifecycle")
-components.html(governance_lifecycle_svg(), height=310, scrolling=False)
+st.markdown(governance_lifecycle_html(), unsafe_allow_html=True)
 st.write(
     "In a production deployment, review is the start of the record, not "
     "the end. Once a reviewer approves the triage, the approved version "
@@ -110,43 +110,7 @@ st.write(
     "deterministic code is deliberate and strict.")
 
 st.markdown("**The pipeline.**")
-
-_PIPELINE_SVG = """
-<svg viewBox="0 0 720 120" xmlns="http://www.w3.org/2000/svg"
-     style="width:100%;max-width:720px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <!-- boxes -->
-  <rect x="2" y="30" width="110" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="152" y="30" width="110" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <rect x="302" y="30" width="110" height="60" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.5"/>
-  <rect x="452" y="30" width="110" height="60" rx="6" fill="#EAF3DE" stroke="#1D6B0F" stroke-width="1.5"/>
-  <rect x="602" y="30" width="110" height="60" rx="6" fill="#EAF2FB" stroke="#2D6A9F" stroke-width="1.5"/>
-  <!-- labels -->
-  <text x="57" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Load</text>
-  <text x="57" y="72" text-anchor="middle" fill="#898781" font-size="9">data files</text>
-  <text x="207" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Detect</text>
-  <text x="207" y="72" text-anchor="middle" fill="#898781" font-size="9">Python, deterministic</text>
-  <text x="357" y="55" text-anchor="middle" fill="#854F0B" font-size="11" font-weight="bold">Review flags</text>
-  <text x="357" y="72" text-anchor="middle" fill="#898781" font-size="9">human decision</text>
-  <text x="507" y="55" text-anchor="middle" fill="#1D6B0F" font-size="11" font-weight="bold">Triage</text>
-  <text x="507" y="72" text-anchor="middle" fill="#898781" font-size="9">AI, on request</text>
-  <text x="657" y="55" text-anchor="middle" fill="#1A3A5C" font-size="11" font-weight="bold">Output</text>
-  <text x="657" y="72" text-anchor="middle" fill="#898781" font-size="9">PDF, CSV, audit</text>
-  <!-- arrows -->
-  <line x1="114" y1="60" x2="148" y2="60" stroke="#2D6A9F" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="264" y1="60" x2="298" y2="60" stroke="#2D6A9F" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="414" y1="60" x2="448" y2="60" stroke="#854F0B" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="564" y1="60" x2="598" y2="60" stroke="#1D6B0F" stroke-width="1.5" marker-end="url(#arr)"/>
-  <!-- top labels -->
-  <text x="207" y="18" text-anchor="middle" fill="#2D6A9F" font-size="9">free, instant</text>
-  <text x="357" y="18" text-anchor="middle" fill="#854F0B" font-size="9">you decide to proceed</text>
-  <text x="507" y="18" text-anchor="middle" fill="#1D6B0F" font-size="9">costs tokens</text>
-  <defs><marker id="arr" viewBox="0 0 10 10" refX="10" refY="5"
-    markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-    <path d="M 0 0 L 10 5 L 0 10 z" fill="#2D6A9F"/></marker></defs>
-</svg>
-"""
-
-components.html(_PIPELINE_SVG, height=130, scrolling=False)
+st.markdown(pipeline_flow_html(), unsafe_allow_html=True)
 st.caption(
     "The human gate between detection and triage is deliberate: the "
     "controller reviews the flags before choosing to invoke the AI.")
