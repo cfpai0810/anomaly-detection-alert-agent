@@ -121,7 +121,7 @@ with tab_live:
         display_df[col] = display_df[col].apply(format_money)
     display_df.columns = ["Account", "Actual", "Prior month", "Budget", "Forecast"]
 
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
     st.caption("{} accounts, {} trailing months of history each.".format(
         len(close_df), len(next(iter(history.values())))))
@@ -220,7 +220,7 @@ with tab_live:
                 })
             st.dataframe(
                 pd.DataFrame(_thresh_rows),
-                use_container_width=True, hide_index=True)
+                width="stretch", hide_index=True)
             st.caption(
                 "Near-zero floor: {}{:,.0f} (accounts below this base "
                 "are compared by amount only, not percentage).".format(
@@ -249,7 +249,7 @@ with tab_live:
 
         _edited = st.data_editor(
             pd.DataFrame(_thresh_data),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             disabled=["Account"],
             column_config={
@@ -379,7 +379,7 @@ with tab_live:
 
     st.dataframe(
         styled,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Volatility": st.column_config.TextColumn(width="medium"),

@@ -3163,3 +3163,37 @@ class TestStep6cDiagrams:
             "The human gate between detection and triage is deliberate: the "
             "controller reviews the flags before choosing to invoke the AI."
         ) in [c.value for c in at.main.caption]
+
+
+# =============================================================================
+# Step 7b: width="stretch" in place of use_container_width
+# =============================================================================
+
+import ast
+
+
+class TestStep7bWidth:
+    """Streamlit 1.60 deprecates use_container_width and logs a warning each
+    time a call passes it. use_container_width=True sets exactly
+    width="stretch", so every call passes that instead, and the look stays
+    the same."""
+
+    def test_step7b_no_use_container_width(self):
+        root = APP_HOME.parent.parent
+        files = sorted((root / "streamlit_app").rglob("*.py"))
+        if (root / "src").is_dir():
+            files += sorted((root / "src").rglob("*.py"))
+        if (root / "main.py").is_file():
+            files.append(root / "main.py")
+        # The page that held the calls is among the files read
+        assert APP_HOME.parent / "views" / "close_scan.py" in files
+        # Every call that passes the keyword, as (file, line of the keyword)
+        found = []
+        for path in files:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    found += [(path.relative_to(root).as_posix(), kw.lineno)
+                              for kw in node.keywords if kw.arg == "use_container_width"]
+        sites = ["{}:{}".format(name, line) for name, line in sorted(found)]
+        assert sites == [], "use_container_width is still passed at " + ", ".join(sites)
